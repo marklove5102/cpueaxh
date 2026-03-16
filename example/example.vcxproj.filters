@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="demo">
+      <UniqueIdentifier>{b6ea1b39-7a8c-4960-a48d-abe696585239}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="demo\escape\escape.hpp">
+      <Filter>demo</Filter>
+    </ClInclude>
+    <ClInclude Include="demo\examples\guest.hpp">
+      <Filter>demo</Filter>
+    </ClInclude>
+    <ClInclude Include="demo\examples\guest_hook\guest_hook_common.hpp">
+      <Filter>demo</Filter>
+    </ClInclude>
+    <ClInclude Include="demo\examples\guest_hook\guest_hook_exact.hpp">
+      <Filter>demo</Filter>
+    </ClInclude>
+    <ClInclude Include="demo\examples\guest_hook\guest_hook_post.hpp">
+      <Filter>demo</Filter>
+    </ClInclude>
+    <ClInclude Include="demo\examples\guest_hook\guest_hook_pre.hpp">
+      <Filter>demo</Filter>
+    </ClInclude>
+    <ClInclude Include="demo\examples\host.hpp">
+      <Filter>demo</Filter>
+    </ClInclude>
+    <ClInclude Include="demo\utils.hpp">
+      <Filter>demo</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="demo\escape\escape.asm">
+      <Filter>demo</Filter>
+    </MASM>
+  </ItemGroup>
+</Project>

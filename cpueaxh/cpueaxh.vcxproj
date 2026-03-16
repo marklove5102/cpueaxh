@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{557a23d7-86ea-4dbd-9773-d03ec81889f6}</ProjectGuid>
+    <RootNamespace>cpueaxh</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" Condition="'$(Platform)'=='x64'" />
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="cpueaxh.cpp" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Platform)'=='x64'">
+    <MASM Include="host_bridge.asm" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="cpueaxh.hpp" />
+    <ClInclude Include="cpueaxh_internal.hpp" />
+    <ClInclude Include="cpu\calc.hpp" />
+    <ClInclude Include="cpu\def.h" />
+    <ClInclude Include="cpu\executor.hpp" />
+    <ClInclude Include="cpu\helper.hpp" />
+    <ClInclude Include="cpu\init.hpp" />
+    <ClInclude Include="cpu\memory.hpp" />
+    <ClInclude Include="instructions\adc.hpp" />
+    <ClInclude Include="instructions\add.hpp" />
+    <ClInclude Include="instructions\and.hpp" />
+    <ClInclude Include="instructions\avx_vex.hpp" />
+    <ClInclude Include="instructions\bsf.hpp" />
+    <ClInclude Include="instructions\bswap.hpp" />
+    <ClInclude Include="instructions\bt.hpp" />
+    <ClInclude Include="instructions\call.hpp" />
+    <ClInclude Include="instructions\cbw.hpp" />
+    <ClInclude Include="instructions\cdq.hpp" />
+    <ClInclude Include="instructions\cmovcc.hpp" />
+    <ClInclude Include="instructions\cmp.hpp" />
+    <ClInclude Include="instructions\cmps.hpp" />
+    <ClInclude Include="instructions\cmpxchg.hpp" />
+    <ClInclude Include="instructions\cmpxchg8b16b.hpp" />
+    <ClInclude Include="instructions\cpuid.hpp" />
+    <ClInclude Include="instructions\dec.hpp" />
+    <ClInclude Include="instructions\div.hpp" />
+    <ClInclude Include="instructions\enter.hpp" />
+    <ClInclude Include="instructions\flags.hpp" />
+    <ClInclude Include="instructions\idiv.hpp" />
+    <ClInclude Include="instructions\imul.hpp" />
+    <ClInclude Include="instructions\inc.hpp" />
+    <ClInclude Include="instructions\jcc.hpp" />
+    <ClInclude Include="instructions\jmp.hpp" />
+    <ClInclude Include="instructions\lahf.hpp" />
+    <ClInclude Include="instructions\lea.hpp" />
+    <ClInclude Include="instructions\leave.hpp" />
+    <ClInclude Include="instructions\lods.hpp" />
+    <ClInclude Include="instructions\mov.hpp" />
+    <ClInclude Include="instructions\movaps.hpp" />
+    <ClInclude Include="instructions\movdq.hpp" />
+    <ClInclude Include="instructions\movs.hpp" />
+    <ClInclude Include="instructions\movsx.hpp" />
+    <ClInclude Include="instructions\movsxd.hpp" />
+    <ClInclude Include="instructions\movups.hpp" />
+    <ClInclude Include="instructions\movzx.hpp" />
+    <ClInclude Include="instructions\mul.hpp" />
+    <ClInclude Include="instructions\neg.hpp" />
+    <ClInclude Include="instructions\nop.hpp" />
+    <ClInclude Include="instructions\not.hpp" />
+    <ClInclude Include="instructions\or.hpp" />
+    <ClInclude Include="instructions\pause.hpp" />
+    <ClInclude Include="instructions\pop.hpp" />
+    <ClInclude Include="instructions\push.hpp" />
+    <ClInclude Include="instructions\pushf.hpp" />
+    <ClInclude Include="instructions\rdtsc.hpp" />
+    <ClInclude Include="instructions\rdtscp.hpp" />
+    <ClInclude Include="instructions\rep.hpp" />
+    <ClInclude Include="instructions\ret.hpp" />
+    <ClInclude Include="instructions\rol.hpp" />
+    <ClInclude Include="instructions\ror.hpp" />
+    <ClInclude Include="instructions\sar.hpp" />
+    <ClInclude Include="instructions\sbb.hpp" />
+    <ClInclude Include="instructions\scas.hpp" />
+    <ClInclude Include="instructions\setcc.hpp" />
+    <ClInclude Include="instructions\shl.hpp" />
+    <ClInclude Include="instructions\shr.hpp" />
+    <ClInclude Include="instructions\sse2_arith_pd.hpp" />
+    <ClInclude Include="instructions\sse2_cmp_pd.hpp" />
+    <ClInclude Include="instructions\sse2_convert.hpp" />
+    <ClInclude Include="instructions\sse2_int_arith.hpp" />
+    <ClInclude Include="instructions\sse2_int_cmp.hpp" />
+    <ClInclude Include="instructions\sse2_int_logic.hpp" />
+    <ClInclude Include="instructions\sse2_logic_pd.hpp" />
+    <ClInclude Include="instructions\sse2_math_pd.hpp" />
+    <ClInclude Include="instructions\sse2_misc.hpp" />
+    <ClInclude Include="instructions\sse2_mov_int.hpp" />
+    <ClInclude Include="instructions\sse2_mov_pd.hpp" />
+    <ClInclude Include="instructions\sse2_pack.hpp" />
+    <ClInclude Include="instructions\sse2_scalar_convert.hpp" />
+    <ClInclude Include="instructions\sse2_shift.hpp" />
+    <ClInclude Include="instructions\sse2_shuffle.hpp" />
+    <ClInclude Include="instructions\sse2_store_misc.hpp" />
+    <ClInclude Include="instructions\sse_arith.hpp" />
+    <ClInclude Include="instructions\sse_cmp.hpp" />
+    <ClInclude Include="instructions\sse_convert.hpp" />
+    <ClInclude Include="instructions\sse_logic.hpp" />
+    <ClInclude Include="instructions\sse_math.hpp" />
+    <ClInclude Include="instructions\sse_misc.hpp" />
+    <ClInclude Include="instructions\sse_mov_misc.hpp" />
+    <ClInclude Include="instructions\sse_shuffle.hpp" />
+    <ClInclude Include="instructions\sse_state.hpp" />
+    <ClInclude Include="instructions\stos.hpp" />
+    <ClInclude Include="instructions\sub.hpp" />
+    <ClInclude Include="instructions\test.hpp" />
+    <ClInclude Include="instructions\xadd.hpp" />
+    <ClInclude Include="instructions\xchg.hpp" />
+    <ClInclude Include="instructions\xlat.hpp" />
+    <ClInclude Include="instructions\xor.hpp" />
+    <ClInclude Include="instructions\xorps.hpp" />
+    <ClInclude Include="memory\manager.hpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" Condition="'$(Platform)'=='x64'" />
+  </ImportGroup>
+</Project>

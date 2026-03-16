@@ -1,0 +1,318 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="cpu">
+      <UniqueIdentifier>{e3cc76af-c49d-4245-86f8-550075541154}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="instructions">
+      <UniqueIdentifier>{1e47817b-be38-4e71-a8d8-7a2497becc01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="memory">
+      <UniqueIdentifier>{4f2213a0-d641-4990-adf3-5cd065b75403}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="host_bridge.asm" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="cpu\calc.hpp">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="cpu\def.h">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="cpu\executor.hpp">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="cpu\helper.hpp">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="cpu\init.hpp">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="cpu\memory.hpp">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\adc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\add.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\and.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\avx_vex.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\bsf.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\bswap.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\bt.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\call.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\cbw.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\cdq.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\cmovcc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\cmp.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\cmps.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\cmpxchg.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\cmpxchg8b16b.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\cpuid.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\dec.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\div.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\enter.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\flags.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\idiv.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\imul.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\inc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\jcc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\jmp.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\lahf.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\lea.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\leave.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\lods.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\mov.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\movaps.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\movdq.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\movs.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\movsx.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\movsxd.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\movups.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\movzx.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\mul.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\neg.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\nop.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\not.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\or.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\pause.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\pop.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\push.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\pushf.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\rdtsc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\rdtscp.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\rep.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\ret.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\rol.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\ror.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sar.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sbb.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\scas.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\setcc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\shl.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\shr.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_arith.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_cmp.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_convert.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_logic.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_math.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_misc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_mov_misc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_shuffle.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse_state.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_arith_pd.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_cmp_pd.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_convert.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_int_arith.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_int_cmp.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_int_logic.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_logic_pd.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_math_pd.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_misc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_mov_int.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_mov_pd.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_pack.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_scalar_convert.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_shift.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_shuffle.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sse2_store_misc.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\stos.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\sub.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\test.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\xadd.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\xchg.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\xlat.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\xor.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="instructions\xorps.hpp">
+      <Filter>instructions</Filter>
+    </ClInclude>
+    <ClInclude Include="cpueaxh.hpp" />
+    <ClInclude Include="cpueaxh_internal.hpp" />
+    <ClInclude Include="memory\manager.hpp">
+      <Filter>memory</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="cpueaxh.cpp" />
+  </ItemGroup>
+</Project>

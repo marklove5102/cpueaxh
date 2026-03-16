@@ -1,0 +1,603 @@
+// instrusments/or.hpp - OR instruction implementation
+
+// --- OR internal helpers ---
+
+int decode_or_rm_index(CPU_CONTEXT* ctx, uint8_t modrm) {
+    int rm = modrm & 0x07;
+    if (ctx->rex_b) {
+        rm |= 0x08;
+    }
+    return rm;
+}
+
+int decode_or_reg_index(CPU_CONTEXT* ctx, uint8_t modrm) {
+    int reg = (modrm >> 3) & 0x07;
+    if (ctx->rex_r) {
+        reg |= 0x08;
+    }
+    return reg;
+}
+
+uint64_t read_or_rm_operand(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
+    uint8_t mod = (modrm >> 6) & 0x03;
+    int rm = decode_or_rm_index(ctx, modrm);
+
+    if (mod == 3) {
+        switch (operand_size) {
+        case 8:  return get_reg8(ctx, rm);
+        case 16: return get_reg16(ctx, rm);
+        case 32: return get_reg32(ctx, rm);
+        case 64: return get_reg64(ctx, rm);
+        default: raise_ud(); return 0;
+        }
+    }
+
+    switch (operand_size) {
+    case 8:  return read_memory_byte(ctx, mem_addr);
+    case 16: return read_memory_word(ctx, mem_addr);
+    case 32: return read_memory_dword(ctx, mem_addr);
+    case 64: return read_memory_qword(ctx, mem_addr);
+    default: raise_ud(); return 0;
+    }
+}
+
+void write_or_rm_operand(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size, uint64_t value) {
+    uint8_t mod = (modrm >> 6) & 0x03;
+    int rm = decode_or_rm_index(ctx, modrm);
+
+    if (mod == 3) {
+        switch (operand_size) {
+        case 8:  set_reg8(ctx, rm, (uint8_t)value); break;
+        case 16: set_reg16(ctx, rm, (uint16_t)value); break;
+        case 32: set_reg32(ctx, rm, (uint32_t)value); break;
+        case 64: set_reg64(ctx, rm, value); break;
+        default: raise_ud();
+        }
+        return;
+    }
+
+    switch (operand_size) {
+    case 8:  write_memory_byte(ctx, mem_addr, (uint8_t)value); break;
+    case 16: write_memory_word(ctx, mem_addr, (uint16_t)value); break;
+    case 32: write_memory_dword(ctx, mem_addr, (uint32_t)value); break;
+    case 64: write_memory_qword(ctx, mem_addr, value); break;
+    default: raise_ud();
+    }
+}
+
+uint64_t read_or_reg_operand(CPU_CONTEXT* ctx, uint8_t modrm, int operand_size) {
+    int reg = decode_or_reg_index(ctx, modrm);
+
+    switch (operand_size) {
+    case 8:  return get_reg8(ctx, reg);
+    case 16: return get_reg16(ctx, reg);
+    case 32: return get_reg32(ctx, reg);
+    case 64: return get_reg64(ctx, reg);
+    default: raise_ud(); return 0;
+    }
+}
+
+void write_or_reg_operand(CPU_CONTEXT* ctx, uint8_t modrm, int operand_size, uint64_t value) {
+    int reg = decode_or_reg_index(ctx, modrm);
+
+    switch (operand_size) {
+    case 8:  set_reg8(ctx, reg, (uint8_t)value); break;
+    case 16: set_reg16(ctx, reg, (uint16_t)value); break;
+    case 32: set_reg32(ctx, reg, (uint32_t)value); break;
+    case 64: set_reg64(ctx, reg, value); break;
+    default: raise_ud();
+    }
+}
+
+void update_or_logic_flags(CPU_CONTEXT* ctx, int operand_size, uint64_t result) {
+    switch (operand_size) {
+    case 8:  update_flags_or8(ctx, (uint8_t)result); break;
+    case 16: update_flags_or16(ctx, (uint16_t)result); break;
+    case 32: update_flags_or32(ctx, (uint32_t)result); break;
+    case 64: update_flags_or64(ctx, result); break;
+    default: raise_ud();
+    }
+}
+
+void or_rm_imm(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size, uint64_t imm) {
+    uint64_t dst = read_or_rm_operand(ctx, modrm, mem_addr, operand_size);
+    uint64_t result = dst | imm;
+    update_or_logic_flags(ctx, operand_size, result);
+    write_or_rm_operand(ctx, modrm, mem_addr, operand_size, result);
+}
+
+void or_rm_r(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
+    uint64_t dst = read_or_rm_operand(ctx, modrm, mem_addr, operand_size);
+    uint64_t src = read_or_reg_operand(ctx, modrm, operand_size);
+    uint64_t result = dst | src;
+    update_or_logic_flags(ctx, operand_size, result);
+    write_or_rm_operand(ctx, modrm, mem_addr, operand_size, result);
+}
+
+void or_r_rm(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
+    uint64_t dst = read_or_reg_operand(ctx, modrm, operand_size);
+    uint64_t src = read_or_rm_operand(ctx, modrm, mem_addr, operand_size);
+    uint64_t result = dst | src;
+    update_or_logic_flags(ctx, operand_size, result);
+    write_or_reg_operand(ctx, modrm, operand_size, result);
+}
+
+// --- OR execution helpers ---
+
+// 0C ib - OR AL, imm8
+void or_al_imm8(CPU_CONTEXT* ctx, uint8_t imm) {
+    uint8_t result = get_reg8(ctx, REG_RAX) | imm;
+    update_flags_or8(ctx, result);
+    set_reg8(ctx, REG_RAX, result);
+}
+
+// 0D iw - OR AX, imm16
+void or_ax_imm16(CPU_CONTEXT* ctx, uint16_t imm) {
+    uint16_t result = get_reg16(ctx, REG_RAX) | imm;
+    update_flags_or16(ctx, result);
+    set_reg16(ctx, REG_RAX, result);
+}
+
+// 0D id - OR EAX, imm32
+void or_eax_imm32(CPU_CONTEXT* ctx, uint32_t imm) {
+    uint32_t result = get_reg32(ctx, REG_RAX) | imm;
+    update_flags_or32(ctx, result);
+    set_reg32(ctx, REG_RAX, result);
+}
+
+// REX.W + 0D id - OR RAX, imm32 (sign-extended to 64 bits)
+void or_rax_imm32(CPU_CONTEXT* ctx, int32_t imm) {
+    uint64_t result = get_reg64(ctx, REG_RAX) | (uint64_t)(int64_t)imm;
+    update_flags_or64(ctx, result);
+    set_reg64(ctx, REG_RAX, result);
+}
+
+// 80 /1 ib - OR r/m8, imm8
+void or_rm8_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint8_t imm) {
+    (void)sib;
+    (void)disp;
+    or_rm_imm(ctx, modrm, mem_addr, 8, imm);
+}
+
+// 81 /1 iw - OR r/m16, imm16
+void or_rm16_imm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint16_t imm) {
+    (void)sib;
+    (void)disp;
+    or_rm_imm(ctx, modrm, mem_addr, 16, imm);
+}
+
+// 81 /1 id - OR r/m32, imm32
+void or_rm32_imm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint32_t imm) {
+    (void)sib;
+    (void)disp;
+    or_rm_imm(ctx, modrm, mem_addr, 32, imm);
+}
+
+// REX.W + 81 /1 id - OR r/m64, imm32 (sign-extended to 64 bits)
+void or_rm64_imm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int32_t imm) {
+    (void)sib;
+    (void)disp;
+    or_rm_imm(ctx, modrm, mem_addr, 64, (uint64_t)(int64_t)imm);
+}
+
+// 83 /1 ib - OR r/m16, imm8 (sign-extended)
+void or_rm16_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm) {
+    (void)sib;
+    (void)disp;
+    or_rm_imm(ctx, modrm, mem_addr, 16, (uint16_t)(int16_t)imm);
+}
+
+// 83 /1 ib - OR r/m32, imm8 (sign-extended)
+void or_rm32_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm) {
+    (void)sib;
+    (void)disp;
+    or_rm_imm(ctx, modrm, mem_addr, 32, (uint32_t)(int32_t)imm);
+}
+
+// REX.W + 83 /1 ib - OR r/m64, imm8 (sign-extended)
+void or_rm64_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm) {
+    (void)sib;
+    (void)disp;
+    or_rm_imm(ctx, modrm, mem_addr, 64, (uint64_t)(int64_t)imm);
+}
+
+// 08 /r - OR r/m8, r8
+void or_rm8_r8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+    (void)sib;
+    (void)disp;
+    or_rm_r(ctx, modrm, mem_addr, 8);
+}
+
+// 09 /r - OR r/m16, r16
+void or_rm16_r16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+    (void)sib;
+    (void)disp;
+    or_rm_r(ctx, modrm, mem_addr, 16);
+}
+
+// 09 /r - OR r/m32, r32
+void or_rm32_r32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+    (void)sib;
+    (void)disp;
+    or_rm_r(ctx, modrm, mem_addr, 32);
+}
+
+// REX.W + 09 /r - OR r/m64, r64
+void or_rm64_r64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+    (void)sib;
+    (void)disp;
+    or_rm_r(ctx, modrm, mem_addr, 64);
+}
+
+// 0A /r - OR r8, r/m8
+void or_r8_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+    (void)sib;
+    (void)disp;
+    or_r_rm(ctx, modrm, mem_addr, 8);
+}
+
+// 0B /r - OR r16, r/m16
+void or_r16_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+    (void)sib;
+    (void)disp;
+    or_r_rm(ctx, modrm, mem_addr, 16);
+}
+
+// 0B /r - OR r32, r/m32
+void or_r32_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+    (void)sib;
+    (void)disp;
+    or_r_rm(ctx, modrm, mem_addr, 32);
+}
+
+// REX.W + 0B /r - OR r64, r/m64
+void or_r64_rm64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+    (void)sib;
+    (void)disp;
+    or_r_rm(ctx, modrm, mem_addr, 64);
+}
+
+// --- OR decode helpers ---
+
+void decode_modrm_or(CPU_CONTEXT* ctx, DecodedInstruction* inst, uint8_t* code, size_t code_size, size_t* offset, bool has_lock_prefix) {
+    if (*offset >= code_size) {
+        raise_gp(0);
+    }
+
+    inst->has_modrm = true;
+    inst->modrm = code[(*offset)++];
+
+    uint8_t mod = (inst->modrm >> 6) & 0x03;
+    uint8_t rm = inst->modrm & 0x07;
+
+    if (mod != 3 && rm == 4 && inst->address_size != 16) {
+        if (*offset >= code_size) {
+            raise_gp(0);
+        }
+        inst->has_sib = true;
+        inst->sib = code[(*offset)++];
+    }
+
+    if (mod == 0 && rm == 5) {
+        inst->disp_size = (inst->address_size == 16) ? 2 : 4;
+    }
+    else if (mod == 0 && inst->has_sib && (inst->sib & 0x07) == 5) {
+        inst->disp_size = 4;
+    }
+    else if (mod == 1) {
+        inst->disp_size = 1;
+    }
+    else if (mod == 2) {
+        inst->disp_size = (inst->address_size == 16) ? 2 : 4;
+    }
+
+    if (inst->disp_size > 0) {
+        if (*offset + inst->disp_size > code_size) {
+            raise_gp(0);
+        }
+
+        inst->displacement = 0;
+        for (int i = 0; i < inst->disp_size; i++) {
+            inst->displacement |= ((int32_t)code[(*offset)++]) << (i * 8);
+        }
+
+        if (inst->disp_size == 1) {
+            inst->displacement = (int8_t)inst->displacement;
+        }
+        else if (inst->disp_size == 2) {
+            inst->displacement = (int16_t)inst->displacement;
+        }
+    }
+
+    if (mod != 3) {
+        inst->mem_address = get_effective_address(ctx, inst->modrm, &inst->sib, &inst->displacement, inst->address_size);
+    }
+
+    if (has_lock_prefix && mod == 3) {
+        raise_ud();
+    }
+}
+
+// --- OR instruction decoder ---
+
+DecodedInstruction decode_or_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = {};
+    size_t offset = 0;
+
+    ctx->rex_present = false;
+    ctx->rex_w = false;
+    ctx->rex_r = false;
+    ctx->rex_x = false;
+    ctx->rex_b = false;
+    ctx->operand_size_override = false;
+    ctx->address_size_override = false;
+
+    bool has_lock_prefix = false;
+
+    while (offset < code_size) {
+        uint8_t prefix = code[offset];
+        if (prefix == 0x66) {
+            ctx->operand_size_override = true;
+            offset++;
+        }
+        else if (prefix == 0x67) {
+            ctx->address_size_override = true;
+            offset++;
+        }
+        else if (prefix >= 0x40 && prefix <= 0x4F) {
+            ctx->rex_present = true;
+            ctx->rex_w = (prefix >> 3) & 1;
+            ctx->rex_r = (prefix >> 2) & 1;
+            ctx->rex_x = (prefix >> 1) & 1;
+            ctx->rex_b = prefix & 1;
+            offset++;
+        }
+        else if (prefix == 0xF0) {
+            has_lock_prefix = true;
+            offset++;
+        }
+        else if (prefix == 0x26 || prefix == 0x2E || prefix == 0x36 || prefix == 0x3E ||
+                 prefix == 0x64 || prefix == 0x65 || prefix == 0xF2 || prefix == 0xF3) {
+            offset++;
+        }
+        else {
+            break;
+        }
+    }
+
+    if (offset >= code_size) {
+        raise_gp(0);
+    }
+
+    inst.opcode = code[offset++];
+
+    inst.operand_size = 32;
+    if (ctx->rex_w) {
+        inst.operand_size = 64;
+    }
+    else if (ctx->operand_size_override) {
+        inst.operand_size = 16;
+    }
+
+    if (ctx->cs.descriptor.long_mode) {
+        inst.address_size = ctx->address_size_override ? 32 : 64;
+    }
+    else {
+        inst.address_size = ctx->address_size_override ? 16 : 32;
+    }
+
+    switch (inst.opcode) {
+    // 0C ib - OR AL, imm8
+    case 0x0C:
+        inst.operand_size = 8;
+        if (has_lock_prefix) {
+            raise_ud();
+        }
+        inst.imm_size = 1;
+        if (offset + inst.imm_size > code_size) {
+            raise_gp(0);
+        }
+        inst.immediate = code[offset++];
+        break;
+
+    // 0D iw/id - OR AX, imm16 / OR EAX, imm32 / REX.W + OR RAX, imm32
+    case 0x0D:
+        if (has_lock_prefix) {
+            raise_ud();
+        }
+        if (ctx->rex_w) {
+            inst.imm_size = 4;
+        }
+        else if (ctx->operand_size_override) {
+            inst.imm_size = 2;
+        }
+        else {
+            inst.imm_size = 4;
+        }
+        if (offset + inst.imm_size > code_size) {
+            raise_gp(0);
+        }
+        for (int i = 0; i < inst.imm_size; i++) {
+            inst.immediate |= ((uint64_t)code[offset++]) << (i * 8);
+        }
+        break;
+
+    // 80 /1 ib - OR r/m8, imm8
+    case 0x80:
+        inst.operand_size = 8;
+        decode_modrm_or(ctx, &inst, code, code_size, &offset, has_lock_prefix);
+        if (((inst.modrm >> 3) & 0x07) != 1) {
+            raise_ud();
+        }
+        inst.imm_size = 1;
+        if (offset + inst.imm_size > code_size) {
+            raise_gp(0);
+        }
+        inst.immediate = code[offset++];
+        break;
+
+    // 81 /1 iw/id - OR r/m16, imm16 / OR r/m32, imm32 / REX.W + OR r/m64, imm32
+    case 0x81:
+        decode_modrm_or(ctx, &inst, code, code_size, &offset, has_lock_prefix);
+        if (((inst.modrm >> 3) & 0x07) != 1) {
+            raise_ud();
+        }
+        if (ctx->rex_w) {
+            inst.imm_size = 4;
+        }
+        else if (ctx->operand_size_override) {
+            inst.imm_size = 2;
+        }
+        else {
+            inst.imm_size = 4;
+        }
+        if (offset + inst.imm_size > code_size) {
+            raise_gp(0);
+        }
+        for (int i = 0; i < inst.imm_size; i++) {
+            inst.immediate |= ((uint64_t)code[offset++]) << (i * 8);
+        }
+        break;
+
+    // 83 /1 ib - OR r/m16, imm8 / OR r/m32, imm8 / REX.W + OR r/m64, imm8
+    case 0x83:
+        decode_modrm_or(ctx, &inst, code, code_size, &offset, has_lock_prefix);
+        if (((inst.modrm >> 3) & 0x07) != 1) {
+            raise_ud();
+        }
+        inst.imm_size = 1;
+        if (offset + inst.imm_size > code_size) {
+            raise_gp(0);
+        }
+        inst.immediate = code[offset++];
+        break;
+
+    // 08 /r - OR r/m8, r8
+    case 0x08:
+        inst.operand_size = 8;
+        decode_modrm_or(ctx, &inst, code, code_size, &offset, has_lock_prefix);
+        break;
+
+    // 09 /r - OR r/m16, r16 / OR r/m32, r32 / REX.W + OR r/m64, r64
+    case 0x09:
+        decode_modrm_or(ctx, &inst, code, code_size, &offset, has_lock_prefix);
+        break;
+
+    // 0A /r - OR r8, r/m8
+    case 0x0A:
+        inst.operand_size = 8;
+        if (has_lock_prefix) {
+            raise_ud();
+        }
+        decode_modrm_or(ctx, &inst, code, code_size, &offset, has_lock_prefix);
+        break;
+
+    // 0B /r - OR r16, r/m16 / OR r32, r/m32 / REX.W + OR r64, r/m64
+    case 0x0B:
+        if (has_lock_prefix) {
+            raise_ud();
+        }
+        decode_modrm_or(ctx, &inst, code, code_size, &offset, has_lock_prefix);
+        break;
+
+    default:
+        raise_ud();
+    }
+
+    finalize_rip_relative_address(ctx, &inst, (int)offset);
+    ctx->last_inst_size = (int)offset;
+    return inst;
+}
+
+// --- OR instruction executor ---
+
+void execute_or(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_or_instruction(ctx, code, code_size);
+
+    switch (inst.opcode) {
+    // 0C ib - OR AL, imm8
+    case 0x0C:
+        or_al_imm8(ctx, (uint8_t)inst.immediate);
+        break;
+
+    // 0D iw/id - OR AX, imm16 / OR EAX, imm32 / REX.W + OR RAX, imm32
+    case 0x0D:
+        if (ctx->rex_w) {
+            or_rax_imm32(ctx, (int32_t)inst.immediate);
+        }
+        else if (ctx->operand_size_override) {
+            or_ax_imm16(ctx, (uint16_t)inst.immediate);
+        }
+        else {
+            or_eax_imm32(ctx, (uint32_t)inst.immediate);
+        }
+        break;
+
+    // 80 /1 ib - OR r/m8, imm8
+    case 0x80:
+        or_rm8_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint8_t)inst.immediate);
+        break;
+
+    // 81 /1 iw/id - OR r/m16, imm16 / OR r/m32, imm32 / REX.W + OR r/m64, imm32
+    case 0x81:
+        if (ctx->rex_w) {
+            or_rm64_imm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int32_t)inst.immediate);
+        }
+        else if (ctx->operand_size_override) {
+            or_rm16_imm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint16_t)inst.immediate);
+        }
+        else {
+            or_rm32_imm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint32_t)inst.immediate);
+        }
+        break;
+
+    // 83 /1 ib - OR r/m16, imm8 / OR r/m32, imm8 / REX.W + OR r/m64, imm8
+    case 0x83:
+        if (ctx->rex_w) {
+            or_rm64_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate);
+        }
+        else if (ctx->operand_size_override) {
+            or_rm16_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate);
+        }
+        else {
+            or_rm32_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate);
+        }
+        break;
+
+    // 08 /r - OR r/m8, r8
+    case 0x08:
+        or_rm8_r8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        break;
+
+    // 09 /r - OR r/m16, r16 / OR r/m32, r32 / REX.W + OR r/m64, r64
+    case 0x09:
+        if (ctx->rex_w) {
+            or_rm64_r64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        }
+        else if (ctx->operand_size_override) {
+            or_rm16_r16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        }
+        else {
+            or_rm32_r32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        }
+        break;
+
+    // 0A /r - OR r8, r/m8
+    case 0x0A:
+        or_r8_rm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        break;
+
+    // 0B /r - OR r16, r/m16 / OR r32, r/m32 / REX.W + OR r64, r/m64
+    case 0x0B:
+        if (ctx->rex_w) {
+            or_r64_rm64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        }
+        else if (ctx->operand_size_override) {
+            or_r16_rm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        }
+        else {
+            or_r32_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        }
+        break;
+    }
+}
