@@ -123,11 +123,25 @@ void cmpxchg_update_flags(CPU_CONTEXT* ctx, int operand_size, uint64_t accumulat
     }
 }
 
-void cmpxchg_rm_reg(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
+void cmpxchg_rm_reg(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size, bool has_lock_prefix) {
     int reg_index = decode_cmpxchg_reg_index(ctx, modrm);
-    uint64_t dst_value = read_cmpxchg_rm_operand(ctx, modrm, mem_addr, operand_size);
     uint64_t src_value = read_cmpxchg_reg_operand(ctx, reg_index, operand_size);
     uint64_t accumulator_value = read_cmpxchg_accumulator(ctx, operand_size);
+
+    if (has_lock_prefix && ((modrm >> 6) & 0x03) != 3) {
+        uint64_t dst_value = 0;
+        cpu_atomic_compare_exchange_memory(ctx, mem_addr, operand_size, accumulator_value, src_value, &dst_value);
+        if (cpu_has_exception(ctx)) {
+            return;
+        }
+        cmpxchg_update_flags(ctx, operand_size, accumulator_value, dst_value);
+        if (accumulator_value != dst_value) {
+            write_cmpxchg_accumulator(ctx, operand_size, dst_value);
+        }
+        return;
+    }
+
+    uint64_t dst_value = read_cmpxchg_rm_operand(ctx, modrm, mem_addr, operand_size);
 
     cmpxchg_update_flags(ctx, operand_size, accumulator_value, dst_value);
 
@@ -262,6 +276,7 @@ DecodedInstruction decode_cmpxchg_instruction(CPU_CONTEXT* ctx, uint8_t* code, s
     else {
         inst.address_size = ctx->address_size_override ? 16 : 32;
     }
+    inst.has_lock_prefix = has_lock_prefix;
 
     switch (inst.opcode) {
     case 0xB0:
@@ -283,5 +298,5 @@ DecodedInstruction decode_cmpxchg_instruction(CPU_CONTEXT* ctx, uint8_t* code, s
 
 void execute_cmpxchg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     DecodedInstruction inst = decode_cmpxchg_instruction(ctx, code, code_size);
-    cmpxchg_rm_reg(ctx, inst.modrm, inst.mem_address, inst.operand_size);
+    cmpxchg_rm_reg(ctx, inst.modrm, inst.mem_address, inst.operand_size, inst.has_lock_prefix);
 }

@@ -19,6 +19,14 @@ The project is designed to provide:
 - a single core codebase that can be built for user mode or compiled directly into a kernel driver through a small platform abstraction layer, without maintaining two copies of the emulator core.
 - the library does not depend on exception handling for execution.
 
+### User-mode host-mode demo
+
+![user-mode host-mode demo](assets/example.png)
+
+### Kernel-mode host-mode demo
+
+![kernel-mode host-mode demo](assets/kexample.png)
+
 ## Highlights
 
 ### 1. Pure C ABI
@@ -340,10 +348,13 @@ This project currently fits best as a:
 
 It is not a complete Unicorn replacement and not a full system virtualization solution, but it already provides substantial user-mode execution, memory permission control, exception modeling, and host escape capabilities.
 
-## Possible future work
+## Acknowledgements
 
-- broader instruction coverage
-- more complete exception, interrupt, and system-instruction semantics
-- stronger block cache, decode cache, or JIT support
-- richer `mem_regions` metadata
-- more complete tests and compatibility samples
+- [QingChan](https://github.com/QingChan0o0): for major contributions to instruction-set coverage
+- [Unicorn](https://github.com/unicorn-engine/unicorn)
+- [mwemu](https://github.com/sha0coder/mwemu)
+
+## Community
+
+- QQ Group: 878316370
+- Discord: [Join](https://discord.com/invite/U9AgvZkxQm)

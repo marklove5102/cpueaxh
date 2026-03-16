@@ -59,34 +59,95 @@ void write_not_rm_operand(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, in
 
 // --- NOT execution helpers ---
 
+bool not_rm_atomic(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
+    if (((modrm >> 6) & 0x03) == 3) {
+        return false;
+    }
+
+    if (cpu_is_host_write_passthrough(ctx)) {
+        uint8_t* ptr = get_memory_write_ptr(ctx, mem_addr, (size_t)(operand_size / 8));
+        if (!ptr) {
+            return true;
+        }
+
+        switch (operand_size) {
+        case 8:
+            (void)_InterlockedXor8((volatile char*)ptr, (char)0xFF);
+            return true;
+        case 16:
+            (void)_InterlockedXor16((volatile short*)ptr, (short)0xFFFF);
+            return true;
+        case 32:
+            (void)_InterlockedXor((volatile long*)ptr, (long)0xFFFFFFFFu);
+            return true;
+        case 64:
+            (void)_InterlockedXor64((volatile __int64*)ptr, (__int64)0xFFFFFFFFFFFFFFFFull);
+            return true;
+        default:
+            raise_ud();
+            return true;
+        }
+    }
+
+    uint64_t current_value = read_memory_operand(ctx, mem_addr, operand_size) & cpu_memory_operand_mask(operand_size);
+    if (cpu_has_exception(ctx)) {
+        return true;
+    }
+
+    for (;;) {
+        uint64_t new_value = (~current_value) & cpu_memory_operand_mask(operand_size);
+        uint64_t observed_value = 0;
+        if (!cpu_atomic_compare_exchange_memory(ctx, mem_addr, operand_size, current_value, new_value, &observed_value)) {
+            if (cpu_has_exception(ctx)) {
+                return true;
+            }
+            current_value = observed_value & cpu_memory_operand_mask(operand_size);
+            continue;
+        }
+        return true;
+    }
+}
+
 // F6 /2 - NOT r/m8
-void not_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void not_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && not_rm_atomic(ctx, modrm, mem_addr, 8)) {
+        return;
+    }
     uint8_t result = (uint8_t)~read_not_rm_operand(ctx, modrm, mem_addr, 8);
     write_not_rm_operand(ctx, modrm, mem_addr, 8, result);
 }
 
 // F7 /2 - NOT r/m16
-void not_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void not_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && not_rm_atomic(ctx, modrm, mem_addr, 16)) {
+        return;
+    }
     uint16_t result = (uint16_t)~read_not_rm_operand(ctx, modrm, mem_addr, 16);
     write_not_rm_operand(ctx, modrm, mem_addr, 16, result);
 }
 
 // F7 /2 - NOT r/m32
-void not_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void not_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && not_rm_atomic(ctx, modrm, mem_addr, 32)) {
+        return;
+    }
     uint32_t result = (uint32_t)~read_not_rm_operand(ctx, modrm, mem_addr, 32);
     write_not_rm_operand(ctx, modrm, mem_addr, 32, result);
 }
 
 // REX.W + F7 /2 - NOT r/m64
-void not_rm64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void not_rm64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && not_rm_atomic(ctx, modrm, mem_addr, 64)) {
+        return;
+    }
     uint64_t result = ~read_not_rm_operand(ctx, modrm, mem_addr, 64);
     write_not_rm_operand(ctx, modrm, mem_addr, 64, result);
 }
@@ -218,6 +279,7 @@ DecodedInstruction decode_not_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     else {
         inst.address_size = ctx->address_size_override ? 16 : 32;
     }
+    inst.has_lock_prefix = has_lock_prefix;
 
     switch (inst.opcode) {
     // F6 /2 - NOT r/m8
@@ -254,19 +316,19 @@ void execute_not(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     switch (inst.opcode) {
     // F6 /2 - NOT r/m8
     case 0xF6:
-        not_rm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+            not_rm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         break;
 
     // F7 /2 - NOT r/m16 / NOT r/m32 / REX.W + NOT r/m64
     case 0xF7:
         if (ctx->rex_w) {
-            not_rm64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+                not_rm64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         else if (ctx->operand_size_override) {
-            not_rm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+                not_rm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         else {
-            not_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+                not_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         break;
     }

@@ -84,6 +84,14 @@ enum RegisterIndex {
     REG_R15 = 15
 };
 
+enum ControlRegisterIndex {
+    REG_CR0 = 0,
+    REG_CR2 = 2,
+    REG_CR3 = 3,
+    REG_CR4 = 4,
+    REG_CR8 = 8
+};
+
 struct SegmentDescriptor {
     uint64_t base;
     uint32_t limit;
@@ -107,6 +115,7 @@ struct XMMRegister {
 
 struct CPU_CONTEXT {
     uint64_t regs[16];
+    uint64_t control_regs[16];
     XMMRegister xmm[16];
     XMMRegister ymm_upper[16];
     uint64_t mm[8];

@@ -84,6 +84,28 @@ SegmentRegister* get_segment_register(CPU_CONTEXT* ctx, int index) {
     }
 }
 
+bool is_valid_control_register(uint8_t index) {
+    return index == REG_CR0 || index == REG_CR2 || index == REG_CR3 || index == REG_CR4 || index == REG_CR8;
+}
+
+uint64_t get_control_register(CPU_CONTEXT* ctx, uint8_t index) {
+    if (!ctx || !is_valid_control_register(index)) {
+        raise_ud();
+        return 0;
+    }
+
+    return ctx->control_regs[index];
+}
+
+void set_control_register(CPU_CONTEXT* ctx, uint8_t index, uint64_t value) {
+    if (!ctx || !is_valid_control_register(index)) {
+        raise_ud();
+        return;
+    }
+
+    ctx->control_regs[index] = value;
+}
+
 void load_segment_register(CPU_CONTEXT* ctx, int seg_index, uint16_t selector) {
     if (seg_index == SEG_CS) {
         raise_ud();

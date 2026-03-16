@@ -73,6 +73,7 @@ typedef struct cpueaxh_x86_context {
 	uint32_t code_exception;
 	uint32_t error_code_exception;
 	uint64_t internal_bridge_block;
+	uint64_t control_regs[16];
 } cpueaxh_x86_context;
 
 typedef struct cpueaxh_mem_region {
@@ -130,6 +131,8 @@ typedef cpueaxh_err (*cpueaxh_cb_escape_t)(cpueaxh_engine* engine, cpueaxh_x86_c
 #define CPUEAXH_ESCAPE_INSN_HLT 10u
 #define CPUEAXH_ESCAPE_INSN_IN 11u
 #define CPUEAXH_ESCAPE_INSN_OUT 12u
+#define CPUEAXH_ESCAPE_INSN_WRITECRX 13u
+#define CPUEAXH_ESCAPE_INSN_READCRX 14u
 
 #define CPUEAXH_EXCEPTION_NONE ((uint32_t)0u)
 #define CPUEAXH_EXCEPTION_DE ((uint32_t)0xE0000000u)
@@ -161,6 +164,11 @@ typedef cpueaxh_err (*cpueaxh_cb_escape_t)(cpueaxh_engine* engine, cpueaxh_x86_c
 #define CPUEAXH_X86_REG_GS_SELECTOR 18
 #define CPUEAXH_X86_REG_GS_BASE 19
 #define CPUEAXH_X86_REG_CPL 20
+#define CPUEAXH_X86_REG_CR0 21
+#define CPUEAXH_X86_REG_CR2 22
+#define CPUEAXH_X86_REG_CR3 23
+#define CPUEAXH_X86_REG_CR4 24
+#define CPUEAXH_X86_REG_CR8 25
 
 #ifdef __cplusplus
 extern "C" {

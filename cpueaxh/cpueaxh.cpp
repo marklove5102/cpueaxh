@@ -98,6 +98,7 @@ static void cpueaxh_context_out(cpueaxh_x86_context* out_context, const CPU_CONT
     out_context->cpl = in_context->cpl;
     out_context->code_exception = in_context->exception.code;
     out_context->error_code_exception = in_context->exception.error_code;
+    CPUEAXH_MEMCPY(out_context->control_regs, in_context->control_regs, sizeof(out_context->control_regs));
 }
 
 static void cpueaxh_context_in(CPU_CONTEXT* out_context, const cpueaxh_x86_context* in_context) {
@@ -121,6 +122,7 @@ static void cpueaxh_context_in(CPU_CONTEXT* out_context, const cpueaxh_x86_conte
     out_context->cpl = in_context->cpl;
     out_context->exception.code = in_context->code_exception;
     out_context->exception.error_code = in_context->error_code_exception;
+    CPUEAXH_MEMCPY(out_context->control_regs, in_context->control_regs, sizeof(out_context->control_regs));
 }
 
 static bool cpueaxh_range_contains(uint64_t begin, uint64_t end, uint64_t address) {
@@ -214,7 +216,14 @@ static cpueaxh_escape_insn_id cpueaxh_classify_escape_instruction(const uint8_t*
         *instruction_size = (uint32_t)(prefix_len + 3);
         return CPUEAXH_ESCAPE_INSN_RDRAND;
     }
-
+    if (opc == 0x0F20 && fetched >= (prefix_len + 3)) {
+        *instruction_size = (uint32_t)(prefix_len + 3);
+        return CPUEAXH_ESCAPE_INSN_READCRX;
+    }
+    if (opc == 0x0F22 && fetched >= (prefix_len + 3)) {
+        *instruction_size = (uint32_t)(prefix_len + 3);
+        return CPUEAXH_ESCAPE_INSN_WRITECRX;
+    }
     return CPUEAXH_ESCAPE_INSN_NONE;
 }
 
@@ -369,6 +378,21 @@ static cpueaxh_err cpueaxh_reg_read_raw(const CPU_CONTEXT* context, int regid, v
     case CPUEAXH_X86_REG_CPL:
         *output = context->cpl;
         return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR0:
+        *output = context->control_regs[REG_CR0];
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR2:
+        *output = context->control_regs[REG_CR2];
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR3:
+        *output = context->control_regs[REG_CR3];
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR4:
+        *output = context->control_regs[REG_CR4];
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR8:
+        *output = context->control_regs[REG_CR8];
+        return CPUEAXH_ERR_OK;
     default:
         return CPUEAXH_ERR_ARG;
     }
@@ -413,6 +437,21 @@ static cpueaxh_err cpueaxh_reg_write_raw(CPU_CONTEXT* context, int regid, const 
         return CPUEAXH_ERR_OK;
     case CPUEAXH_X86_REG_CPL:
         context->cpl = (uint8_t)(*input & 0x3u);
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR0:
+        context->control_regs[REG_CR0] = *input;
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR2:
+        context->control_regs[REG_CR2] = *input;
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR3:
+        context->control_regs[REG_CR3] = *input;
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR4:
+        context->control_regs[REG_CR4] = *input;
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_CR8:
+        context->control_regs[REG_CR8] = *input;
         return CPUEAXH_ERR_OK;
     default:
         return CPUEAXH_ERR_ARG;

@@ -19,6 +19,91 @@ static uint64_t mov_segment_base(CPU_CONTEXT* ctx, int segment_index) {
     return seg ? seg->descriptor.base : 0;
 }
 
+static bool mov_decode_control_register_operands(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t* control_register, uint8_t* general_register) {
+    if (!ctx || !control_register || !general_register) {
+        return false;
+    }
+
+    uint8_t decoded_control_register = (uint8_t)(((modrm >> 3) & 0x07) | (ctx->rex_r ? 0x08 : 0x00));
+    uint8_t decoded_general_register = (uint8_t)((modrm & 0x07) | (ctx->rex_b ? 0x08 : 0x00));
+
+    if (ctx->rex_r && decoded_control_register != REG_CR8) {
+        raise_ud();
+        return false;
+    }
+
+    if (!is_valid_control_register(decoded_control_register)) {
+        raise_ud();
+        return false;
+    }
+
+    if (ctx->cpl != 0) {
+        raise_gp(0);
+        return false;
+    }
+
+    *control_register = decoded_control_register;
+    *general_register = decoded_general_register;
+    return true;
+}
+
+static bool mov_validate_control_register_write(CPU_CONTEXT* ctx, uint8_t control_register, uint64_t value) {
+    if (!ctx) {
+        return false;
+    }
+
+    switch (control_register) {
+    case REG_CR0:
+        if ((value & (1ull << 31)) == 0 || ((value & (1ull << 0)) == 0 && (value & (1ull << 31)) != 0) ||
+            ((value & (1ull << 29)) != 0 && (value & (1ull << 30)) == 0)) {
+            raise_gp(0);
+            return false;
+        }
+        break;
+    case REG_CR4:
+        if ((value & (1ull << 5)) == 0) {
+            raise_gp(0);
+            return false;
+        }
+        break;
+    case REG_CR8:
+        if ((value & ~0xFull) != 0) {
+            raise_gp(0);
+            return false;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return true;
+}
+
+void mov_r64_cr(CPU_CONTEXT* ctx, uint8_t modrm) {
+    uint8_t control_register = 0;
+    uint8_t general_register = 0;
+    if (!mov_decode_control_register_operands(ctx, modrm, &control_register, &general_register)) {
+        return;
+    }
+
+    set_reg64(ctx, general_register, get_control_register(ctx, control_register));
+}
+
+void mov_cr_r64(CPU_CONTEXT* ctx, uint8_t modrm) {
+    uint8_t control_register = 0;
+    uint8_t general_register = 0;
+    if (!mov_decode_control_register_operands(ctx, modrm, &control_register, &general_register)) {
+        return;
+    }
+
+    uint64_t value = get_reg64(ctx, general_register);
+    if (!mov_validate_control_register_write(ctx, control_register, value)) {
+        return;
+    }
+
+    set_control_register(ctx, control_register, value);
+}
+
 void mov_r8_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
     uint8_t mod = (modrm >> 6) & 0x03;
     uint8_t reg = (modrm >> 3) & 0x07;
@@ -497,6 +582,18 @@ void decode_modrm_mov(CPU_CONTEXT* ctx, DecodedInstruction* inst, uint8_t* code,
     }
 }
 
+void decode_modrm_mov_cr(CPU_CONTEXT* ctx, DecodedInstruction* inst, uint8_t* code, size_t code_size, size_t* offset) {
+    (void)ctx;
+
+    if (*offset >= code_size) {
+        raise_gp(0);
+        return;
+    }
+
+    inst->has_modrm = true;
+    inst->modrm = code[(*offset)++];
+}
+
 // --- MOV instruction decoder ---
 
 DecodedInstruction decode_mov_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
@@ -556,6 +653,14 @@ DecodedInstruction decode_mov_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     }
 
     inst.opcode = code[offset++];
+    if (inst.opcode == 0x0F) {
+        if (offset >= code_size) {
+            raise_gp(0);
+            ctx->last_inst_size = (int)offset;
+            return inst;
+        }
+        inst.opcode = code[offset++];
+    }
 
     // Determine operand size: in 64-bit mode, default is 32; REX.W promotes to 64; 0x66 demotes to 16
     inst.operand_size = 32;
@@ -606,6 +711,16 @@ DecodedInstruction decode_mov_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     // 8E /r - MOV Sreg, r/m16 / REX.W + MOV Sreg, r/m64
     case 0x8E:
         decode_modrm_mov(ctx, &inst, code, code_size, &offset);
+        break;
+
+    // 0F 20 /r - MOV r64, CRn
+    case 0x20:
+        decode_modrm_mov_cr(ctx, &inst, code, code_size, &offset);
+        break;
+
+    // 0F 22 /r - MOV CRn, r64
+    case 0x22:
+        decode_modrm_mov_cr(ctx, &inst, code, code_size, &offset);
         break;
 
     // A0 - MOV AL, moffs8
@@ -839,6 +954,16 @@ void execute_mov(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         else {
             mov_sreg_rm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
         }
+        break;
+
+    // 0F 20 /r - MOV r64, CRn
+    case 0x20:
+        mov_r64_cr(ctx, inst.modrm);
+        break;
+
+    // 0F 22 /r - MOV CRn, r64
+    case 0x22:
+        mov_cr_r64(ctx, inst.modrm);
         break;
 
     // A0 - MOV AL, moffs8

@@ -19,6 +19,14 @@
 - 通过一层很小的平台适配封装，让同一份核心代码既可用于用户态，也可直接编译进内核驱动，而不需要维护两套核心实现。
 - 执行过程不依赖异常处理机制。
 
+### 用户态 host 模式演示
+
+![用户态 host 模式演示](assets/example.png)
+
+### 内核态 host 模式演示
+
+![内核态 host 模式演示](assets/kexample.png)
+
 ## 特性概览
 
 ### 1. 纯 C ABI
@@ -340,10 +348,13 @@ if (cpueaxh_mem_regions(engine, &regions, &count) == CPUEAXH_ERR_OK) {
 
 它还不是完整的 Unicorn 替代品，也不是完整的系统虚拟化方案，但目前已经具备较完整的用户态执行、内存权限控制、异常建模与 host escape 能力。
 
-## 后续可能工作
+## 致谢
 
-- 更广的指令覆盖
-- 更完整的异常、中断与系统指令语义
-- 更强的块缓存、解码缓存或 JIT 支持
-- 更丰富的 `mem_regions` 元数据
-- 更完整的测试与兼容性样例
+- [QingChan](https://github.com/QingChan0o0)：感谢其对指令集补全的大量贡献
+- [Unicorn](https://github.com/unicorn-engine/unicorn)
+- [mwemu](https://github.com/sha0coder/mwemu)
+
+## 项目交流方式
+
+- QQ 群：878316370
+- Discord：[Join](https://discord.com/invite/U9AgvZkxQm)

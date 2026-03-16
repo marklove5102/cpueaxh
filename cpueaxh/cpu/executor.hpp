@@ -449,8 +449,9 @@ int cpu_step(CPU_CONTEXT* ctx) {
     else if (raw_opc == 0x8D) {
         execute_lea(ctx, buf, (size_t)fetched);
     }
-    // MOV: 88-8C, 8E, A0-A3, B0-BF, C6, C7
+    // MOV: 88-8C, 8E, 0F20, 0F22, A0-A3, B0-BF, C6, C7
     else if (((raw_opc >= 0x88 && raw_opc <= 0x8C) || raw_opc == 0x8E) ||
+        opc == 0x0F20 || opc == 0x0F22 ||
         (raw_opc >= 0xA0 && raw_opc <= 0xA3) ||
         (raw_opc >= 0xB0 && raw_opc <= 0xBF) ||
         raw_opc == 0xC6 || raw_opc == 0xC7)

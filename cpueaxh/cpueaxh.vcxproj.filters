@@ -311,6 +311,7 @@
     <ClInclude Include="memory\manager.hpp">
       <Filter>memory</Filter>
     </ClInclude>
+    <ClInclude Include="cpueaxh_platform.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="cpueaxh.cpp" />

@@ -70,6 +70,16 @@ void write_xchg_rm_operand(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, i
 void xchg_rm_reg(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
     int reg_index = decode_xchg_reg_index(ctx, modrm);
     uint64_t reg_value = read_xchg_reg_operand(ctx, reg_index, operand_size);
+
+    if (((modrm >> 6) & 0x03) != 3) {
+        uint64_t rm_value = 0;
+        if (!cpu_atomic_exchange_memory(ctx, mem_addr, operand_size, reg_value, &rm_value)) {
+            return;
+        }
+        write_xchg_reg_operand(ctx, reg_index, operand_size, rm_value);
+        return;
+    }
+
     uint64_t rm_value = read_xchg_rm_operand(ctx, modrm, mem_addr, operand_size);
     write_xchg_reg_operand(ctx, reg_index, operand_size, rm_value);
     write_xchg_rm_operand(ctx, modrm, mem_addr, operand_size, reg_value);
@@ -191,6 +201,7 @@ DecodedInstruction decode_xchg_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     else {
         inst.address_size = ctx->address_size_override ? 16 : 32;
     }
+    inst.has_lock_prefix = has_lock_prefix;
     switch (inst.opcode) {
     case 0x86:
         inst.operand_size = 8;

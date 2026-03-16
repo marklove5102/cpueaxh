@@ -59,10 +59,45 @@ void write_neg_rm_operand(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, in
 
 // --- NEG execution helpers ---
 
+bool neg_rm_atomic(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
+    if (((modrm >> 6) & 0x03) == 3) {
+        return false;
+    }
+
+    uint64_t current_value = read_memory_operand(ctx, mem_addr, operand_size) & cpu_memory_operand_mask(operand_size);
+    if (cpu_has_exception(ctx)) {
+        return true;
+    }
+
+    for (;;) {
+        uint64_t new_value = (0ULL - current_value) & cpu_memory_operand_mask(operand_size);
+        uint64_t observed_value = 0;
+        if (!cpu_atomic_compare_exchange_memory(ctx, mem_addr, operand_size, current_value, new_value, &observed_value)) {
+            if (cpu_has_exception(ctx)) {
+                return true;
+            }
+            current_value = observed_value & cpu_memory_operand_mask(operand_size);
+            continue;
+        }
+
+        switch (operand_size) {
+        case 8:  update_flags_sub8(ctx, 0, (uint8_t)current_value, (uint16_t)new_value); break;
+        case 16: update_flags_sub16(ctx, 0, (uint16_t)current_value, (uint32_t)new_value); break;
+        case 32: update_flags_sub32(ctx, 0, (uint32_t)current_value, (uint64_t)new_value); break;
+        case 64: update_flags_sub64(ctx, 0, current_value, new_value); break;
+        default: raise_ud(); break;
+        }
+        return true;
+    }
+}
+
 // F6 /3 - NEG r/m8
-void neg_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void neg_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && neg_rm_atomic(ctx, modrm, mem_addr, 8)) {
+        return;
+    }
     uint8_t src = (uint8_t)read_neg_rm_operand(ctx, modrm, mem_addr, 8);
     uint16_t result = (uint16_t)(0 - src);
     update_flags_sub8(ctx, 0, src, result);
@@ -70,9 +105,12 @@ void neg_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_
 }
 
 // F7 /3 - NEG r/m16
-void neg_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void neg_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && neg_rm_atomic(ctx, modrm, mem_addr, 16)) {
+        return;
+    }
     uint16_t src = (uint16_t)read_neg_rm_operand(ctx, modrm, mem_addr, 16);
     uint32_t result = (uint32_t)(0 - src);
     update_flags_sub16(ctx, 0, src, result);
@@ -80,9 +118,12 @@ void neg_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64
 }
 
 // F7 /3 - NEG r/m32
-void neg_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void neg_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && neg_rm_atomic(ctx, modrm, mem_addr, 32)) {
+        return;
+    }
     uint32_t src = (uint32_t)read_neg_rm_operand(ctx, modrm, mem_addr, 32);
     uint64_t result = (uint64_t)(0 - src);
     update_flags_sub32(ctx, 0, src, result);
@@ -90,9 +131,12 @@ void neg_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64
 }
 
 // REX.W + F7 /3 - NEG r/m64
-void neg_rm64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void neg_rm64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && neg_rm_atomic(ctx, modrm, mem_addr, 64)) {
+        return;
+    }
     uint64_t src = read_neg_rm_operand(ctx, modrm, mem_addr, 64);
     uint64_t result = (uint64_t)(0 - src);
     update_flags_sub64(ctx, 0, src, result);
@@ -226,6 +270,7 @@ DecodedInstruction decode_neg_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     else {
         inst.address_size = ctx->address_size_override ? 16 : 32;
     }
+    inst.has_lock_prefix = has_lock_prefix;
 
     switch (inst.opcode) {
     // F6 /3 - NEG r/m8
@@ -262,19 +307,19 @@ void execute_neg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     switch (inst.opcode) {
     // F6 /3 - NEG r/m8
     case 0xF6:
-        neg_rm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+            neg_rm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         break;
 
     // F7 /3 - NEG r/m16 / NEG r/m32 / REX.W + NEG r/m64
     case 0xF7:
         if (ctx->rex_w) {
-            neg_rm64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+                neg_rm64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         else if (ctx->operand_size_override) {
-            neg_rm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+                neg_rm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         else {
-            neg_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+                neg_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         break;
     }

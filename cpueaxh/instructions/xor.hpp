@@ -99,16 +99,34 @@ void update_xor_logic_flags(CPU_CONTEXT* ctx, int operand_size, uint64_t result)
     }
 }
 
-void xor_rm_imm(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size, uint64_t imm) {
+void xor_rm_imm(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size, uint64_t imm, bool has_lock_prefix) {
+    if (has_lock_prefix && ((modrm >> 6) & 0x03) != 3) {
+        uint64_t old_value = 0;
+        uint64_t new_value = 0;
+        if (!cpu_atomic_xor_memory(ctx, mem_addr, operand_size, imm, &old_value, &new_value)) {
+            return;
+        }
+        update_xor_logic_flags(ctx, operand_size, new_value);
+        return;
+    }
     uint64_t dst = read_xor_rm_operand(ctx, modrm, mem_addr, operand_size);
     uint64_t result = dst ^ imm;
     update_xor_logic_flags(ctx, operand_size, result);
     write_xor_rm_operand(ctx, modrm, mem_addr, operand_size, result);
 }
 
-void xor_rm_r(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
-    uint64_t dst = read_xor_rm_operand(ctx, modrm, mem_addr, operand_size);
+void xor_rm_r(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size, bool has_lock_prefix) {
     uint64_t src = read_xor_reg_operand(ctx, modrm, operand_size);
+    if (has_lock_prefix && ((modrm >> 6) & 0x03) != 3) {
+        uint64_t old_value = 0;
+        uint64_t new_value = 0;
+        if (!cpu_atomic_xor_memory(ctx, mem_addr, operand_size, src, &old_value, &new_value)) {
+            return;
+        }
+        update_xor_logic_flags(ctx, operand_size, new_value);
+        return;
+    }
+    uint64_t dst = read_xor_rm_operand(ctx, modrm, mem_addr, operand_size);
     uint64_t result = dst ^ src;
     update_xor_logic_flags(ctx, operand_size, result);
     write_xor_rm_operand(ctx, modrm, mem_addr, operand_size, result);
@@ -153,80 +171,80 @@ void xor_rax_imm32(CPU_CONTEXT* ctx, int32_t imm) {
 }
 
 // 80 /6 ib - XOR r/m8, imm8
-void xor_rm8_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint8_t imm) {
+void xor_rm8_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint8_t imm, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_imm(ctx, modrm, mem_addr, 8, imm);
+    xor_rm_imm(ctx, modrm, mem_addr, 8, imm, has_lock_prefix);
 }
 
 // 81 /6 iw - XOR r/m16, imm16
-void xor_rm16_imm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint16_t imm) {
+void xor_rm16_imm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint16_t imm, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_imm(ctx, modrm, mem_addr, 16, imm);
+    xor_rm_imm(ctx, modrm, mem_addr, 16, imm, has_lock_prefix);
 }
 
 // 81 /6 id - XOR r/m32, imm32
-void xor_rm32_imm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint32_t imm) {
+void xor_rm32_imm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, uint32_t imm, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_imm(ctx, modrm, mem_addr, 32, imm);
+    xor_rm_imm(ctx, modrm, mem_addr, 32, imm, has_lock_prefix);
 }
 
 // REX.W + 81 /6 id - XOR r/m64, imm32 (sign-extended to 64 bits)
-void xor_rm64_imm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int32_t imm) {
+void xor_rm64_imm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int32_t imm, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_imm(ctx, modrm, mem_addr, 64, (uint64_t)(int64_t)imm);
+    xor_rm_imm(ctx, modrm, mem_addr, 64, (uint64_t)(int64_t)imm, has_lock_prefix);
 }
 
 // 83 /6 ib - XOR r/m16, imm8 (sign-extended)
-void xor_rm16_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm) {
+void xor_rm16_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_imm(ctx, modrm, mem_addr, 16, (uint16_t)(int16_t)imm);
+    xor_rm_imm(ctx, modrm, mem_addr, 16, (uint16_t)(int16_t)imm, has_lock_prefix);
 }
 
 // 83 /6 ib - XOR r/m32, imm8 (sign-extended)
-void xor_rm32_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm) {
+void xor_rm32_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_imm(ctx, modrm, mem_addr, 32, (uint32_t)(int32_t)imm);
+    xor_rm_imm(ctx, modrm, mem_addr, 32, (uint32_t)(int32_t)imm, has_lock_prefix);
 }
 
 // REX.W + 83 /6 ib - XOR r/m64, imm8 (sign-extended)
-void xor_rm64_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm) {
+void xor_rm64_imm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, int8_t imm, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_imm(ctx, modrm, mem_addr, 64, (uint64_t)(int64_t)imm);
+    xor_rm_imm(ctx, modrm, mem_addr, 64, (uint64_t)(int64_t)imm, has_lock_prefix);
 }
 
 // 30 /r - XOR r/m8, r8
-void xor_rm8_r8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void xor_rm8_r8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_r(ctx, modrm, mem_addr, 8);
+    xor_rm_r(ctx, modrm, mem_addr, 8, has_lock_prefix);
 }
 
 // 31 /r - XOR r/m16, r16
-void xor_rm16_r16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void xor_rm16_r16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_r(ctx, modrm, mem_addr, 16);
+    xor_rm_r(ctx, modrm, mem_addr, 16, has_lock_prefix);
 }
 
 // 31 /r - XOR r/m32, r32
-void xor_rm32_r32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void xor_rm32_r32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_r(ctx, modrm, mem_addr, 32);
+    xor_rm_r(ctx, modrm, mem_addr, 32, has_lock_prefix);
 }
 
 // REX.W + 31 /r - XOR r/m64, r64
-void xor_rm64_r64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void xor_rm64_r64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
-    xor_rm_r(ctx, modrm, mem_addr, 64);
+    xor_rm_r(ctx, modrm, mem_addr, 64, has_lock_prefix);
 }
 
 // 32 /r - XOR r8, r/m8
@@ -385,6 +403,7 @@ DecodedInstruction decode_xor_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     else {
         inst.address_size = ctx->address_size_override ? 16 : 32;
     }
+    inst.has_lock_prefix = has_lock_prefix;
 
     switch (inst.opcode) {
     // 34 ib - XOR AL, imm8
@@ -535,50 +554,50 @@ void execute_xor(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
 
     // 80 /6 ib - XOR r/m8, imm8
     case 0x80:
-        xor_rm8_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint8_t)inst.immediate);
+        xor_rm8_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint8_t)inst.immediate, inst.has_lock_prefix);
         break;
 
     // 81 /6 iw/id - XOR r/m16, imm16 / XOR r/m32, imm32 / REX.W + XOR r/m64, imm32
     case 0x81:
         if (ctx->rex_w) {
-            xor_rm64_imm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int32_t)inst.immediate);
+            xor_rm64_imm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int32_t)inst.immediate, inst.has_lock_prefix);
         }
         else if (ctx->operand_size_override) {
-            xor_rm16_imm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint16_t)inst.immediate);
+            xor_rm16_imm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint16_t)inst.immediate, inst.has_lock_prefix);
         }
         else {
-            xor_rm32_imm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint32_t)inst.immediate);
+            xor_rm32_imm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (uint32_t)inst.immediate, inst.has_lock_prefix);
         }
         break;
 
     // 83 /6 ib - XOR r/m16, imm8 / XOR r/m32, imm8 / REX.W + XOR r/m64, imm8
     case 0x83:
         if (ctx->rex_w) {
-            xor_rm64_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate);
+            xor_rm64_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate, inst.has_lock_prefix);
         }
         else if (ctx->operand_size_override) {
-            xor_rm16_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate);
+            xor_rm16_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate, inst.has_lock_prefix);
         }
         else {
-            xor_rm32_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate);
+            xor_rm32_imm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, (int8_t)inst.immediate, inst.has_lock_prefix);
         }
         break;
 
     // 30 /r - XOR r/m8, r8
     case 0x30:
-        xor_rm8_r8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        xor_rm8_r8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         break;
 
     // 31 /r - XOR r/m16, r16 / XOR r/m32, r32 / REX.W + XOR r/m64, r64
     case 0x31:
         if (ctx->rex_w) {
-            xor_rm64_r64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+            xor_rm64_r64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         else if (ctx->operand_size_override) {
-            xor_rm16_r16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+            xor_rm16_r16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         else {
-            xor_rm32_r32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+            xor_rm32_r32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         break;
 

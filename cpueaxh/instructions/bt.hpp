@@ -162,98 +162,94 @@ uint64_t read_bt_source_register(CPU_CONTEXT* ctx, uint8_t modrm, int operand_si
 }
 
 bool execute_locked_bt_memory(CPU_CONTEXT* ctx, BitTestOperation operation, uint64_t address, int operand_size, unsigned int bit_index) {
-    switch (operand_size) {
-    case 16: {
-        uint16_t old_value = read_memory_word(ctx, address);
-        if (cpu_has_exception(ctx)) {
+    if (cpu_is_host_write_passthrough(ctx)) {
+        uint8_t* ptr = get_memory_write_ptr(ctx, address, (size_t)(operand_size / 8));
+        if (!ptr) {
             return true;
         }
 
-        bool carry = (old_value & (uint16_t)(1u << bit_index)) != 0;
-        uint16_t new_value = old_value;
+        switch (operand_size) {
+        case 32: {
+            unsigned char carry = 0;
+            const long bit_mask = (long)(1UL << bit_index);
+            switch (operation) {
+            case BIT_TEST_OP_BTS:
+                carry = (unsigned char)_interlockedbittestandset((volatile long*)ptr, (long)bit_index);
+                break;
+            case BIT_TEST_OP_BTR:
+                carry = (unsigned char)_interlockedbittestandreset((volatile long*)ptr, (long)bit_index);
+                break;
+            case BIT_TEST_OP_BTC:
+                carry = (unsigned char)((_InterlockedXor((volatile long*)ptr, bit_mask) & bit_mask) != 0);
+                break;
+            default:
+                raise_ud();
+                return true;
+            }
+            set_flag(ctx, RFLAGS_CF, carry != 0);
+            return true;
+        }
+        case 64: {
+            unsigned char carry = 0;
+            const __int64 bit_mask = ((__int64)1ULL << bit_index);
+            switch (operation) {
+            case BIT_TEST_OP_BTS:
+                carry = (unsigned char)_interlockedbittestandset64((volatile __int64*)ptr, (long long)bit_index);
+                break;
+            case BIT_TEST_OP_BTR:
+                carry = (unsigned char)_interlockedbittestandreset64((volatile __int64*)ptr, (long long)bit_index);
+                break;
+            case BIT_TEST_OP_BTC:
+                carry = (unsigned char)((_InterlockedXor64((volatile __int64*)ptr, bit_mask) & bit_mask) != 0);
+                break;
+            default:
+                raise_ud();
+                return true;
+            }
+            set_flag(ctx, RFLAGS_CF, carry != 0);
+            return true;
+        }
+        default:
+            break;
+        }
+    }
+
+    uint64_t current_value = read_memory_operand(ctx, address, operand_size) & cpu_memory_operand_mask(operand_size);
+    if (cpu_has_exception(ctx)) {
+        return true;
+    }
+
+    for (;;) {
+        bool carry = ((current_value >> bit_index) & 0x1ULL) != 0;
+        uint64_t new_value = current_value;
 
         switch (operation) {
-        case BIT_TEST_OP_BT:
-            set_flag(ctx, RFLAGS_CF, carry);
-            return true;
         case BIT_TEST_OP_BTS:
-            new_value = (uint16_t)(old_value | (uint16_t)(1u << bit_index));
+            new_value = current_value | (1ULL << bit_index);
             break;
         case BIT_TEST_OP_BTR:
-            new_value = (uint16_t)(old_value & (uint16_t)~(1u << bit_index));
+            new_value = current_value & ~(1ULL << bit_index);
             break;
         case BIT_TEST_OP_BTC:
-            new_value = (uint16_t)(old_value ^ (uint16_t)(1u << bit_index));
+            new_value = current_value ^ (1ULL << bit_index);
             break;
+        default:
+            raise_ud();
+            return true;
         }
 
-        write_memory_word(ctx, address, new_value);
+        uint64_t observed_value = 0;
+        if (!cpu_atomic_compare_exchange_memory(ctx, address, operand_size, current_value, new_value, &observed_value)) {
+            if (cpu_has_exception(ctx)) {
+                return true;
+            }
+            current_value = observed_value & cpu_memory_operand_mask(operand_size);
+            continue;
+        }
+
         set_flag(ctx, RFLAGS_CF, carry);
         return true;
     }
-    case 32: {
-        uint32_t old_value = read_memory_dword(ctx, address);
-        if (cpu_has_exception(ctx)) {
-            return true;
-        }
-
-        bool carry = ((old_value >> bit_index) & 1u) != 0;
-        uint32_t new_value = old_value;
-
-        switch (operation) {
-        case BIT_TEST_OP_BT:
-            set_flag(ctx, RFLAGS_CF, carry);
-            return true;
-        case BIT_TEST_OP_BTS:
-            new_value = old_value | (1u << bit_index);
-            break;
-        case BIT_TEST_OP_BTR:
-            new_value = old_value & ~(1u << bit_index);
-            break;
-        case BIT_TEST_OP_BTC:
-            new_value = old_value ^ (1u << bit_index);
-            break;
-        }
-
-        write_memory_dword(ctx, address, new_value);
-        set_flag(ctx, RFLAGS_CF, carry);
-        return true;
-    }
-    case 64: {
-        uint64_t old_value = read_memory_qword(ctx, address);
-        if (cpu_has_exception(ctx)) {
-            return true;
-        }
-
-        bool carry = ((old_value >> bit_index) & 1ULL) != 0;
-        uint64_t new_value = old_value;
-
-        switch (operation) {
-        case BIT_TEST_OP_BT:
-            set_flag(ctx, RFLAGS_CF, carry);
-            return true;
-        case BIT_TEST_OP_BTS:
-            new_value = old_value | (1ULL << bit_index);
-            break;
-        case BIT_TEST_OP_BTR:
-            new_value = old_value & ~(1ULL << bit_index);
-            break;
-        case BIT_TEST_OP_BTC:
-            new_value = old_value ^ (1ULL << bit_index);
-            break;
-        }
-
-        write_memory_qword(ctx, address, new_value);
-        set_flag(ctx, RFLAGS_CF, carry);
-        return true;
-    }
-    default:
-        raise_ud();
-        return true;
-    }
-
-    raise_ud();
-    return true;
 }
 
 void execute_bt_operation(CPU_CONTEXT* ctx, const DecodedInstruction* inst) {

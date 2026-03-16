@@ -103,10 +103,22 @@ uint64_t xadd_compute_result(CPU_CONTEXT* ctx, int operand_size, uint64_t dst_va
     }
 }
 
-void xadd_rm_reg(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
+void xadd_rm_reg(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size, bool has_lock_prefix) {
     int reg_index = decode_xadd_reg_index(ctx, modrm);
-    uint64_t dst_value = read_xadd_rm_operand(ctx, modrm, mem_addr, operand_size);
     uint64_t src_value = read_xadd_reg_operand(ctx, reg_index, operand_size);
+
+    if (has_lock_prefix && ((modrm >> 6) & 0x03) != 3) {
+        uint64_t dst_value = 0;
+        uint64_t result = 0;
+        if (!cpu_atomic_add_memory(ctx, mem_addr, operand_size, src_value, &dst_value, &result)) {
+            return;
+        }
+        xadd_compute_result(ctx, operand_size, dst_value, src_value);
+        write_xadd_reg_operand(ctx, reg_index, operand_size, dst_value);
+        return;
+    }
+
+    uint64_t dst_value = read_xadd_rm_operand(ctx, modrm, mem_addr, operand_size);
     uint64_t result = xadd_compute_result(ctx, operand_size, dst_value, src_value);
 
     write_xadd_reg_operand(ctx, reg_index, operand_size, dst_value);
@@ -236,6 +248,7 @@ DecodedInstruction decode_xadd_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     else {
         inst.address_size = ctx->address_size_override ? 16 : 32;
     }
+    inst.has_lock_prefix = has_lock_prefix;
 
     switch (inst.opcode) {
     case 0xC0:
@@ -257,5 +270,5 @@ DecodedInstruction decode_xadd_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
 
 void execute_xadd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     DecodedInstruction inst = decode_xadd_instruction(ctx, code, code_size);
-    xadd_rm_reg(ctx, inst.modrm, inst.mem_address, inst.operand_size);
+    xadd_rm_reg(ctx, inst.modrm, inst.mem_address, inst.operand_size, inst.has_lock_prefix);
 }

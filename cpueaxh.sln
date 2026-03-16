@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36429.23
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cpueaxh", "cpueaxh\cpueaxh.vcxproj", "{557A23D7-86EA-4DBD-9773-D03EC81889F6}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "kcpueaxh", "kcpueaxh\kcpueaxh.vcxproj", "{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "example", "example\example.vcxproj", "{A90FBDA8-52C3-4FD4-AF04-983C40C6762C}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "kexample", "kexample\kexample.vcxproj", "{22A4F131-AC2A-1258-CFDC-A6AAB86510EE}"
@@ -25,6 +27,14 @@ Global
 		{557A23D7-86EA-4DBD-9773-D03EC81889F6}.Release|x64.Build.0 = Release|x64
 		{557A23D7-86EA-4DBD-9773-D03EC81889F6}.Release|x86.ActiveCfg = Release|Win32
 		{557A23D7-86EA-4DBD-9773-D03EC81889F6}.Release|x86.Build.0 = Release|Win32
+		{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}.Debug|x64.ActiveCfg = Debug|x64
+		{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}.Debug|x64.Build.0 = Debug|x64
+		{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}.Debug|x86.ActiveCfg = Debug|x64
+		{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}.Debug|x86.Build.0 = Debug|x64
+		{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}.Release|x64.ActiveCfg = Release|x64
+		{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}.Release|x64.Build.0 = Release|x64
+		{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}.Release|x86.ActiveCfg = Release|x64
+		{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}.Release|x86.Build.0 = Release|x64
 		{A90FBDA8-52C3-4FD4-AF04-983C40C6762C}.Debug|x64.ActiveCfg = Debug|x64
 		{A90FBDA8-52C3-4FD4-AF04-983C40C6762C}.Debug|x64.Build.0 = Debug|x64
 		{A90FBDA8-52C3-4FD4-AF04-983C40C6762C}.Debug|x86.ActiveCfg = Debug|Win32

@@ -59,10 +59,34 @@ void write_inc_rm_operand(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, in
 
 // --- INC execution helpers ---
 
+bool inc_rm_atomic(CPU_CONTEXT* ctx, uint8_t modrm, uint64_t mem_addr, int operand_size) {
+    if (((modrm >> 6) & 0x03) == 3) {
+        return false;
+    }
+
+    uint64_t old_value = 0;
+    uint64_t new_value = 0;
+    if (!cpu_atomic_add_memory(ctx, mem_addr, operand_size, 1, &old_value, &new_value)) {
+        return true;
+    }
+
+    switch (operand_size) {
+    case 8:  update_flags_inc8(ctx, (uint8_t)old_value, (uint8_t)new_value); break;
+    case 16: update_flags_inc16(ctx, (uint16_t)old_value, (uint16_t)new_value); break;
+    case 32: update_flags_inc32(ctx, (uint32_t)old_value, (uint32_t)new_value); break;
+    case 64: update_flags_inc64(ctx, old_value, new_value); break;
+    default: raise_ud(); break;
+    }
+    return true;
+}
+
 // FE /0 - INC r/m8
-void inc_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void inc_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && inc_rm_atomic(ctx, modrm, mem_addr, 8)) {
+        return;
+    }
     uint8_t src = (uint8_t)read_inc_rm_operand(ctx, modrm, mem_addr, 8);
     uint8_t result = (uint8_t)(src + 1);
     update_flags_inc8(ctx, src, result);
@@ -70,9 +94,12 @@ void inc_rm8(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_
 }
 
 // FF /0 - INC r/m16
-void inc_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void inc_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && inc_rm_atomic(ctx, modrm, mem_addr, 16)) {
+        return;
+    }
     uint16_t src = (uint16_t)read_inc_rm_operand(ctx, modrm, mem_addr, 16);
     uint16_t result = (uint16_t)(src + 1);
     update_flags_inc16(ctx, src, result);
@@ -80,9 +107,12 @@ void inc_rm16(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64
 }
 
 // FF /0 - INC r/m32
-void inc_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void inc_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && inc_rm_atomic(ctx, modrm, mem_addr, 32)) {
+        return;
+    }
     uint32_t src = (uint32_t)read_inc_rm_operand(ctx, modrm, mem_addr, 32);
     uint32_t result = (uint32_t)(src + 1);
     update_flags_inc32(ctx, src, result);
@@ -90,9 +120,12 @@ void inc_rm32(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64
 }
 
 // REX.W + FF /0 - INC r/m64
-void inc_rm64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr) {
+void inc_rm64(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t sib, int32_t disp, uint64_t mem_addr, bool has_lock_prefix) {
     (void)sib;
     (void)disp;
+    if (has_lock_prefix && inc_rm_atomic(ctx, modrm, mem_addr, 64)) {
+        return;
+    }
     uint64_t src = read_inc_rm_operand(ctx, modrm, mem_addr, 64);
     uint64_t result = src + 1;
     update_flags_inc64(ctx, src, result);
@@ -226,6 +259,7 @@ DecodedInstruction decode_inc_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     else {
         inst.address_size = ctx->address_size_override ? 16 : 32;
     }
+    inst.has_lock_prefix = has_lock_prefix;
 
     switch (inst.opcode) {
     // FE /0 - INC r/m8
@@ -262,19 +296,19 @@ void execute_inc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     switch (inst.opcode) {
     // FE /0 - INC r/m8
     case 0xFE:
-        inc_rm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+        inc_rm8(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         break;
 
     // FF /0 - INC r/m16 / INC r/m32 / REX.W + INC r/m64
     case 0xFF:
         if (ctx->rex_w) {
-            inc_rm64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+            inc_rm64(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         else if (ctx->operand_size_override) {
-            inc_rm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+            inc_rm16(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         else {
-            inc_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+            inc_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.has_lock_prefix);
         }
         break;
     }

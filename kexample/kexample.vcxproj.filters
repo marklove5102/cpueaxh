@@ -1,14 +1,14 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="..\cpueaxh\cpueaxh.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <MASM Include="..\cpueaxh\host_bridge.asm" />
+    <MASM Include="demo\escape\escape.asm" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\cpueaxh\cpueaxh.hpp" />
-    <ClInclude Include="..\cpueaxh\cpueaxh_platform.hpp" />
+    <ClInclude Include="demo\escape\escape.hpp" />
+    <ClInclude Include="demo\examples\host.hpp" />
+    <ClInclude Include="demo\utils.hpp" />
   </ItemGroup>
 </Project>

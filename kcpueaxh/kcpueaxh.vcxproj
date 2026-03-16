@@ -11,28 +11,28 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{22A4F131-AC2A-1258-CFDC-A6AAB86510EE}</ProjectGuid>
+    <ProjectGuid>{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}</ProjectGuid>
     <TemplateGuid>{1bc93793-694f-48fe-9372-81e2b05556fd}</TemplateGuid>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
     <Configuration>Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
-    <RootNamespace>kexample</RootNamespace>
+    <RootNamespace>kcpueaxh</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
-    <ConfigurationType>Driver</ConfigurationType>
     <DriverType>KMDF</DriverType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
-    <ConfigurationType>Driver</ConfigurationType>
     <DriverType>KMDF</DriverType>
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
   </PropertyGroup>
@@ -62,14 +62,9 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>kcpueaxh.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(ProjectDir)..\$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
-    </Link>
-    <DriverSign>
-      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-    </DriverSign>
+    <Lib>
+      <OutputFile>$(OutDir)kcpueaxh.lib</OutputFile>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -81,34 +76,20 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>kcpueaxh.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(ProjectDir)..\$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
-    </Link>
-    <DriverSign>
-      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-    </DriverSign>
+    <Lib>
+      <OutputFile>$(OutDir)kcpueaxh.lib</OutputFile>
+    </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <FilesToPackage Include="$(TargetPath)" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\cpueaxh\cpueaxh.cpp" />
   </ItemGroup>
   <ItemGroup Condition="'$(Platform)'=='x64'">
-    <MASM Include="demo\escape\escape.asm" />
+    <MASM Include="..\cpueaxh\host_bridge.asm" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\kcpueaxh\kcpueaxh.vcxproj">
-      <Project>{36A4F775-BFB5-4E8A-9E97-C925A7CD183B}</Project>
-      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="demo\escape\escape.hpp" />
-    <ClInclude Include="demo\examples\host.hpp" />
-    <ClInclude Include="demo\utils.hpp" />
+    <ClInclude Include="..\cpueaxh\cpueaxh.hpp" />
+    <ClInclude Include="..\cpueaxh\cpueaxh_internal.hpp" />
+    <ClInclude Include="..\cpueaxh\cpueaxh_platform.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
