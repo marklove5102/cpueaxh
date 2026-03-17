@@ -88,13 +88,6 @@ static XMMRegister apply_aesenc128(XMMRegister state, XMMRegister round_key) {
     return aesenc_m128i_to_xmm(_mm_aesenc_si128(aesenc_xmm_to_m128i(state), aesenc_xmm_to_m128i(round_key)));
 }
 
-static AVXRegister256 apply_vaesenc256(AVXRegister256 state, AVXRegister256 round_key) {
-    AVXRegister256 result = {};
-    result.low = apply_aesenc128(state.low, round_key.low);
-    result.high = apply_aesenc128(state.high, round_key.high);
-    return result;
-}
-
 static XMMRegister read_aesenc_source_operand(CPU_CONTEXT* ctx, const DecodedInstruction* inst) {
     if (((inst->modrm >> 6) & 0x03) == 0x03) {
         return get_xmm128(ctx, decode_aesenc_xmm_rm_index(ctx, inst->modrm));

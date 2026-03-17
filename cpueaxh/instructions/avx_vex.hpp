@@ -4267,7 +4267,10 @@ void execute_avx_vex(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
             if (is_256) {
                 AVXRegister256 state = get_ymm256(ctx, avx_vex_source1_index(&prefix));
                 AVXRegister256 round_key = read_avx_rm256(ctx, &inst);
-                set_ymm256(ctx, dest, apply_vaesenc256(state, round_key));
+                AVXRegister256 result = {};
+                result.low = apply_aesenc128(state.low, round_key.low);
+                result.high = apply_aesenc128(state.high, round_key.high);
+                set_ymm256(ctx, dest, result);
             }
             else {
                 XMMRegister state = get_xmm128(ctx, avx_vex_source1_index(&prefix));
