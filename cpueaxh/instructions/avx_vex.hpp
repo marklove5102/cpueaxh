@@ -911,6 +911,8 @@ static DecodedInstruction decode_avx_vex_0f3a_modrm_imm(CPU_CONTEXT* ctx, uint8_
 
     inst.immediate = code[offset++];
     inst.imm_size = 1;
+    inst.inst_size = (int)offset;
+    finalize_rip_relative_address(ctx, &inst, (int)offset);
     ctx->last_inst_size = (int)offset;
     return inst;
 }

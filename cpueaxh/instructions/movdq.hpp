@@ -160,11 +160,11 @@ DecodedInstruction decode_movdq_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
         raise_ud();
     }
 
-    if (inst.opcode == 0x6E && *mandatory_prefix != 0x66) {
+    if (inst.opcode == 0x6E && *mandatory_prefix != 0x00 && *mandatory_prefix != 0x66) {
         raise_ud();
     }
 
-    if (inst.opcode == 0x7E && *mandatory_prefix != 0x66 && *mandatory_prefix != 0xF3) {
+    if (inst.opcode == 0x7E && *mandatory_prefix != 0x00 && *mandatory_prefix != 0x66 && *mandatory_prefix != 0xF3) {
         raise_ud();
     }
 
@@ -248,6 +248,16 @@ void write_movdq_xmm_low_or_mem64(CPU_CONTEXT* ctx, const DecodedInstruction* in
 void execute_movdq(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     uint8_t mandatory_prefix = 0;
     DecodedInstruction inst = decode_movdq_instruction(ctx, code, code_size, &mandatory_prefix);
+
+    if (mandatory_prefix == 0x00 && inst.opcode == 0x6E) {
+        set_mm64(ctx, decode_movdq_mm_reg_index(inst.modrm), read_movdq_gpr_or_mem(ctx, &inst, ctx->rex_w ? 64 : 32));
+        return;
+    }
+
+    if (mandatory_prefix == 0x00 && inst.opcode == 0x7E) {
+        write_movdq_gpr_or_mem(ctx, &inst, ctx->rex_w ? 64 : 32, get_mm64(ctx, decode_movdq_mm_reg_index(inst.modrm)));
+        return;
+    }
 
     if (mandatory_prefix == 0x66 && inst.opcode == 0x6E) {
         XMMRegister result = {};

@@ -78,6 +78,170 @@ static void cpueaxh_copy_segment_in(SegmentRegister* out_segment, const cpueaxh_
     out_segment->descriptor.long_mode = in_segment->descriptor.long_mode != 0;
 }
 
+static void cpueaxh_copy_xmm_out(cpueaxh_x86_xmm* out_xmm, const XMMRegister* in_xmm) {
+    out_xmm->low = in_xmm->low;
+    out_xmm->high = in_xmm->high;
+}
+
+static void cpueaxh_copy_xmm_in(XMMRegister* out_xmm, const cpueaxh_x86_xmm* in_xmm) {
+    out_xmm->low = in_xmm->low;
+    out_xmm->high = in_xmm->high;
+}
+
+static SegmentRegister* cpueaxh_select_segment(CPU_CONTEXT* context, int regid) {
+    switch (regid) {
+    case CPUEAXH_X86_REG_ES_SELECTOR:
+    case CPUEAXH_X86_REG_ES_BASE:
+    case CPUEAXH_X86_REG_ES_LIMIT:
+    case CPUEAXH_X86_REG_ES_TYPE:
+    case CPUEAXH_X86_REG_ES_DPL:
+    case CPUEAXH_X86_REG_ES_PRESENT:
+    case CPUEAXH_X86_REG_ES_GRANULARITY:
+    case CPUEAXH_X86_REG_ES_DB:
+    case CPUEAXH_X86_REG_ES_LONG_MODE:
+        return &context->es;
+    case CPUEAXH_X86_REG_CS_SELECTOR:
+    case CPUEAXH_X86_REG_CS_BASE:
+    case CPUEAXH_X86_REG_CS_LIMIT:
+    case CPUEAXH_X86_REG_CS_TYPE:
+    case CPUEAXH_X86_REG_CS_DPL:
+    case CPUEAXH_X86_REG_CS_PRESENT:
+    case CPUEAXH_X86_REG_CS_GRANULARITY:
+    case CPUEAXH_X86_REG_CS_DB:
+    case CPUEAXH_X86_REG_CS_LONG_MODE:
+        return &context->cs;
+    case CPUEAXH_X86_REG_SS_SELECTOR:
+    case CPUEAXH_X86_REG_SS_BASE:
+    case CPUEAXH_X86_REG_SS_LIMIT:
+    case CPUEAXH_X86_REG_SS_TYPE:
+    case CPUEAXH_X86_REG_SS_DPL:
+    case CPUEAXH_X86_REG_SS_PRESENT:
+    case CPUEAXH_X86_REG_SS_GRANULARITY:
+    case CPUEAXH_X86_REG_SS_DB:
+    case CPUEAXH_X86_REG_SS_LONG_MODE:
+        return &context->ss;
+    case CPUEAXH_X86_REG_DS_SELECTOR:
+    case CPUEAXH_X86_REG_DS_BASE:
+    case CPUEAXH_X86_REG_DS_LIMIT:
+    case CPUEAXH_X86_REG_DS_TYPE:
+    case CPUEAXH_X86_REG_DS_DPL:
+    case CPUEAXH_X86_REG_DS_PRESENT:
+    case CPUEAXH_X86_REG_DS_GRANULARITY:
+    case CPUEAXH_X86_REG_DS_DB:
+    case CPUEAXH_X86_REG_DS_LONG_MODE:
+        return &context->ds;
+    case CPUEAXH_X86_REG_FS_SELECTOR:
+    case CPUEAXH_X86_REG_FS_BASE:
+    case CPUEAXH_X86_REG_FS_LIMIT:
+    case CPUEAXH_X86_REG_FS_TYPE:
+    case CPUEAXH_X86_REG_FS_DPL:
+    case CPUEAXH_X86_REG_FS_PRESENT:
+    case CPUEAXH_X86_REG_FS_GRANULARITY:
+    case CPUEAXH_X86_REG_FS_DB:
+    case CPUEAXH_X86_REG_FS_LONG_MODE:
+        return &context->fs;
+    case CPUEAXH_X86_REG_GS_SELECTOR:
+    case CPUEAXH_X86_REG_GS_BASE:
+    case CPUEAXH_X86_REG_GS_LIMIT:
+    case CPUEAXH_X86_REG_GS_TYPE:
+    case CPUEAXH_X86_REG_GS_DPL:
+    case CPUEAXH_X86_REG_GS_PRESENT:
+    case CPUEAXH_X86_REG_GS_GRANULARITY:
+    case CPUEAXH_X86_REG_GS_DB:
+    case CPUEAXH_X86_REG_GS_LONG_MODE:
+        return &context->gs;
+    default:
+        return NULL;
+    }
+}
+
+static const SegmentRegister* cpueaxh_select_segment(const CPU_CONTEXT* context, int regid) {
+    return cpueaxh_select_segment(const_cast<CPU_CONTEXT*>(context), regid);
+}
+
+enum CPUEAXH_SEGMENT_FIELD_KIND {
+    CPUEAXH_SEGMENT_FIELD_SELECTOR,
+    CPUEAXH_SEGMENT_FIELD_BASE,
+    CPUEAXH_SEGMENT_FIELD_LIMIT,
+    CPUEAXH_SEGMENT_FIELD_TYPE,
+    CPUEAXH_SEGMENT_FIELD_DPL,
+    CPUEAXH_SEGMENT_FIELD_PRESENT,
+    CPUEAXH_SEGMENT_FIELD_GRANULARITY,
+    CPUEAXH_SEGMENT_FIELD_DB,
+    CPUEAXH_SEGMENT_FIELD_LONG_MODE,
+    CPUEAXH_SEGMENT_FIELD_NONE
+};
+
+static CPUEAXH_SEGMENT_FIELD_KIND cpueaxh_segment_field_kind_from_regid(int regid) {
+    switch (regid) {
+    case CPUEAXH_X86_REG_ES_SELECTOR:
+    case CPUEAXH_X86_REG_CS_SELECTOR:
+    case CPUEAXH_X86_REG_SS_SELECTOR:
+    case CPUEAXH_X86_REG_DS_SELECTOR:
+    case CPUEAXH_X86_REG_FS_SELECTOR:
+    case CPUEAXH_X86_REG_GS_SELECTOR:
+        return CPUEAXH_SEGMENT_FIELD_SELECTOR;
+    case CPUEAXH_X86_REG_ES_BASE:
+    case CPUEAXH_X86_REG_CS_BASE:
+    case CPUEAXH_X86_REG_SS_BASE:
+    case CPUEAXH_X86_REG_DS_BASE:
+    case CPUEAXH_X86_REG_FS_BASE:
+    case CPUEAXH_X86_REG_GS_BASE:
+        return CPUEAXH_SEGMENT_FIELD_BASE;
+    case CPUEAXH_X86_REG_ES_LIMIT:
+    case CPUEAXH_X86_REG_CS_LIMIT:
+    case CPUEAXH_X86_REG_SS_LIMIT:
+    case CPUEAXH_X86_REG_DS_LIMIT:
+    case CPUEAXH_X86_REG_FS_LIMIT:
+    case CPUEAXH_X86_REG_GS_LIMIT:
+        return CPUEAXH_SEGMENT_FIELD_LIMIT;
+    case CPUEAXH_X86_REG_ES_TYPE:
+    case CPUEAXH_X86_REG_CS_TYPE:
+    case CPUEAXH_X86_REG_SS_TYPE:
+    case CPUEAXH_X86_REG_DS_TYPE:
+    case CPUEAXH_X86_REG_FS_TYPE:
+    case CPUEAXH_X86_REG_GS_TYPE:
+        return CPUEAXH_SEGMENT_FIELD_TYPE;
+    case CPUEAXH_X86_REG_ES_DPL:
+    case CPUEAXH_X86_REG_CS_DPL:
+    case CPUEAXH_X86_REG_SS_DPL:
+    case CPUEAXH_X86_REG_DS_DPL:
+    case CPUEAXH_X86_REG_FS_DPL:
+    case CPUEAXH_X86_REG_GS_DPL:
+        return CPUEAXH_SEGMENT_FIELD_DPL;
+    case CPUEAXH_X86_REG_ES_PRESENT:
+    case CPUEAXH_X86_REG_CS_PRESENT:
+    case CPUEAXH_X86_REG_SS_PRESENT:
+    case CPUEAXH_X86_REG_DS_PRESENT:
+    case CPUEAXH_X86_REG_FS_PRESENT:
+    case CPUEAXH_X86_REG_GS_PRESENT:
+        return CPUEAXH_SEGMENT_FIELD_PRESENT;
+    case CPUEAXH_X86_REG_ES_GRANULARITY:
+    case CPUEAXH_X86_REG_CS_GRANULARITY:
+    case CPUEAXH_X86_REG_SS_GRANULARITY:
+    case CPUEAXH_X86_REG_DS_GRANULARITY:
+    case CPUEAXH_X86_REG_FS_GRANULARITY:
+    case CPUEAXH_X86_REG_GS_GRANULARITY:
+        return CPUEAXH_SEGMENT_FIELD_GRANULARITY;
+    case CPUEAXH_X86_REG_ES_DB:
+    case CPUEAXH_X86_REG_CS_DB:
+    case CPUEAXH_X86_REG_SS_DB:
+    case CPUEAXH_X86_REG_DS_DB:
+    case CPUEAXH_X86_REG_FS_DB:
+    case CPUEAXH_X86_REG_GS_DB:
+        return CPUEAXH_SEGMENT_FIELD_DB;
+    case CPUEAXH_X86_REG_ES_LONG_MODE:
+    case CPUEAXH_X86_REG_CS_LONG_MODE:
+    case CPUEAXH_X86_REG_SS_LONG_MODE:
+    case CPUEAXH_X86_REG_DS_LONG_MODE:
+    case CPUEAXH_X86_REG_FS_LONG_MODE:
+    case CPUEAXH_X86_REG_GS_LONG_MODE:
+        return CPUEAXH_SEGMENT_FIELD_LONG_MODE;
+    default:
+        return CPUEAXH_SEGMENT_FIELD_NONE;
+    }
+}
+
 static void cpueaxh_context_out(cpueaxh_x86_context* out_context, const CPU_CONTEXT* in_context) {
     CPUEAXH_MEMSET(out_context, 0, sizeof(*out_context));
     CPUEAXH_MEMCPY(out_context->regs, in_context->regs, sizeof(out_context->regs));
@@ -101,6 +265,7 @@ static void cpueaxh_context_out(cpueaxh_x86_context* out_context, const CPU_CONT
     out_context->code_exception = in_context->exception.code;
     out_context->error_code_exception = in_context->exception.error_code;
     CPUEAXH_MEMCPY(out_context->control_regs, in_context->control_regs, sizeof(out_context->control_regs));
+    out_context->processor_id = in_context->processor_id;
 }
 
 static void cpueaxh_context_in(CPU_CONTEXT* out_context, const cpueaxh_x86_context* in_context) {
@@ -125,6 +290,46 @@ static void cpueaxh_context_in(CPU_CONTEXT* out_context, const cpueaxh_x86_conte
     out_context->exception.code = in_context->code_exception;
     out_context->exception.error_code = in_context->error_code_exception;
     CPUEAXH_MEMCPY(out_context->control_regs, in_context->control_regs, sizeof(out_context->control_regs));
+    out_context->processor_id = in_context->processor_id;
+}
+
+static int cpueaxh_control_reg_index_from_regid(int regid) {
+    switch (regid) {
+    case CPUEAXH_X86_REG_CR0:
+        return 0;
+    case CPUEAXH_X86_REG_CR1:
+        return 1;
+    case CPUEAXH_X86_REG_CR2:
+        return 2;
+    case CPUEAXH_X86_REG_CR3:
+        return 3;
+    case CPUEAXH_X86_REG_CR4:
+        return 4;
+    case CPUEAXH_X86_REG_CR5:
+        return 5;
+    case CPUEAXH_X86_REG_CR6:
+        return 6;
+    case CPUEAXH_X86_REG_CR7:
+        return 7;
+    case CPUEAXH_X86_REG_CR8:
+        return 8;
+    case CPUEAXH_X86_REG_CR9:
+        return 9;
+    case CPUEAXH_X86_REG_CR10:
+        return 10;
+    case CPUEAXH_X86_REG_CR11:
+        return 11;
+    case CPUEAXH_X86_REG_CR12:
+        return 12;
+    case CPUEAXH_X86_REG_CR13:
+        return 13;
+    case CPUEAXH_X86_REG_CR14:
+        return 14;
+    case CPUEAXH_X86_REG_CR15:
+        return 15;
+    default:
+        return -1;
+    }
 }
 
 static bool cpueaxh_range_contains(uint64_t begin, uint64_t end, uint64_t address) {
@@ -337,6 +542,9 @@ static cpueaxh_err cpueaxh_apply_memory_mode(cpueaxh_engine* engine, uint32_t me
         &engine->memory_manager,
         MM_PROT_READ | MM_PROT_WRITE | MM_PROT_EXEC,
         memory_mode == CPUEAXH_MEMORY_MODE_HOST);
+    if (memory_mode != CPUEAXH_MEMORY_MODE_HOST) {
+        mm_set_host_write_isolation(&engine->memory_manager, false);
+    }
     return CPUEAXH_ERR_OK;
 }
 
@@ -402,123 +610,217 @@ static cpueaxh_err cpueaxh_translate_patch_error(MM_PATCH_STATUS status) {
 }
 
 static cpueaxh_err cpueaxh_reg_read_raw(const CPU_CONTEXT* context, int regid, void* value) {
-    uint64_t* output = reinterpret_cast<uint64_t*>(value);
-    if (!output) {
+    if (!value) {
         return CPUEAXH_ERR_ARG;
     }
 
-    switch (regid) {
-    case CPUEAXH_X86_REG_RAX:
-    case CPUEAXH_X86_REG_RCX:
-    case CPUEAXH_X86_REG_RDX:
-    case CPUEAXH_X86_REG_RBX:
-    case CPUEAXH_X86_REG_RSP:
-    case CPUEAXH_X86_REG_RBP:
-    case CPUEAXH_X86_REG_RSI:
-    case CPUEAXH_X86_REG_RDI:
-    case CPUEAXH_X86_REG_R8:
-    case CPUEAXH_X86_REG_R9:
-    case CPUEAXH_X86_REG_R10:
-    case CPUEAXH_X86_REG_R11:
-    case CPUEAXH_X86_REG_R12:
-    case CPUEAXH_X86_REG_R13:
-    case CPUEAXH_X86_REG_R14:
-    case CPUEAXH_X86_REG_R15:
-        *output = context->regs[regid];
+    if (regid >= CPUEAXH_X86_REG_RAX && regid <= CPUEAXH_X86_REG_R15) {
+        *reinterpret_cast<uint64_t*>(value) = context->regs[regid];
         return CPUEAXH_ERR_OK;
+    }
+    if (regid >= CPUEAXH_X86_REG_XMM0 && regid <= CPUEAXH_X86_REG_XMM15) {
+        cpueaxh_copy_xmm_out(reinterpret_cast<cpueaxh_x86_xmm*>(value), &context->xmm[regid - CPUEAXH_X86_REG_XMM0]);
+        return CPUEAXH_ERR_OK;
+    }
+    if (regid >= CPUEAXH_X86_REG_YMM0 && regid <= CPUEAXH_X86_REG_YMM15) {
+        cpueaxh_x86_ymm* output = reinterpret_cast<cpueaxh_x86_ymm*>(value);
+        const int ymm_index = regid - CPUEAXH_X86_REG_YMM0;
+        cpueaxh_copy_xmm_out(&output->lower, &context->xmm[ymm_index]);
+        cpueaxh_copy_xmm_out(&output->upper, &context->ymm_upper[ymm_index]);
+        return CPUEAXH_ERR_OK;
+    }
+    if (regid >= CPUEAXH_X86_REG_MM0 && regid <= CPUEAXH_X86_REG_MM7) {
+        *reinterpret_cast<uint64_t*>(value) = context->mm[regid - CPUEAXH_X86_REG_MM0];
+        return CPUEAXH_ERR_OK;
+    }
+
+    const int control_reg_index = cpueaxh_control_reg_index_from_regid(regid);
+    if (control_reg_index >= 0) {
+        *reinterpret_cast<uint64_t*>(value) = context->control_regs[control_reg_index];
+        return CPUEAXH_ERR_OK;
+    }
+
+    switch (regid) {
     case CPUEAXH_X86_REG_RIP:
-        *output = context->rip;
+        *reinterpret_cast<uint64_t*>(value) = context->rip;
         return CPUEAXH_ERR_OK;
     case CPUEAXH_X86_REG_EFLAGS:
-        *output = context->rflags;
-        return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_GS_SELECTOR:
-        *output = context->gs.selector;
-        return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_GS_BASE:
-        *output = context->gs.descriptor.base;
+        *reinterpret_cast<uint64_t*>(value) = context->rflags;
         return CPUEAXH_ERR_OK;
     case CPUEAXH_X86_REG_CPL:
-        *output = context->cpl;
+        *reinterpret_cast<uint64_t*>(value) = context->cpl;
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR0:
-        *output = context->control_regs[REG_CR0];
+    case CPUEAXH_X86_REG_MXCSR:
+        *reinterpret_cast<uint32_t*>(value) = context->mxcsr;
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR2:
-        *output = context->control_regs[REG_CR2];
+    case CPUEAXH_X86_REG_GDTR_BASE:
+        *reinterpret_cast<uint64_t*>(value) = context->gdtr_base;
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR3:
-        *output = context->control_regs[REG_CR3];
+    case CPUEAXH_X86_REG_GDTR_LIMIT:
+        *reinterpret_cast<uint16_t*>(value) = context->gdtr_limit;
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR4:
-        *output = context->control_regs[REG_CR4];
+    case CPUEAXH_X86_REG_LDTR_BASE:
+        *reinterpret_cast<uint64_t*>(value) = context->ldtr_base;
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR8:
-        *output = context->control_regs[REG_CR8];
+    case CPUEAXH_X86_REG_LDTR_LIMIT:
+        *reinterpret_cast<uint16_t*>(value) = context->ldtr_limit;
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_EXCEPTION_CODE:
+        *reinterpret_cast<uint32_t*>(value) = context->exception.code;
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_EXCEPTION_ERROR_CODE:
+        *reinterpret_cast<uint32_t*>(value) = context->exception.error_code;
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_PROCESSOR_ID:
+        *reinterpret_cast<uint32_t*>(value) = context->processor_id;
         return CPUEAXH_ERR_OK;
     default:
-        return CPUEAXH_ERR_ARG;
+        break;
     }
+
+    const SegmentRegister* segment = cpueaxh_select_segment(context, regid);
+    if (segment) {
+        switch (cpueaxh_segment_field_kind_from_regid(regid)) {
+        case CPUEAXH_SEGMENT_FIELD_SELECTOR:
+            *reinterpret_cast<uint16_t*>(value) = segment->selector;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_BASE:
+            *reinterpret_cast<uint64_t*>(value) = segment->descriptor.base;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_LIMIT:
+            *reinterpret_cast<uint32_t*>(value) = segment->descriptor.limit;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_TYPE:
+            *reinterpret_cast<uint32_t*>(value) = segment->descriptor.type;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_DPL:
+            *reinterpret_cast<uint32_t*>(value) = segment->descriptor.dpl;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_PRESENT:
+            *reinterpret_cast<uint32_t*>(value) = segment->descriptor.present ? 1u : 0u;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_GRANULARITY:
+            *reinterpret_cast<uint32_t*>(value) = segment->descriptor.granularity ? 1u : 0u;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_DB:
+            *reinterpret_cast<uint32_t*>(value) = segment->descriptor.db ? 1u : 0u;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_LONG_MODE:
+            *reinterpret_cast<uint32_t*>(value) = segment->descriptor.long_mode ? 1u : 0u;
+            return CPUEAXH_ERR_OK;
+        default:
+            break;
+        }
+    }
+
+    return CPUEAXH_ERR_ARG;
 }
 
 static cpueaxh_err cpueaxh_reg_write_raw(CPU_CONTEXT* context, int regid, const void* value) {
-    const uint64_t* input = reinterpret_cast<const uint64_t*>(value);
-    if (!input) {
+    if (!value) {
         return CPUEAXH_ERR_ARG;
     }
 
-    switch (regid) {
-    case CPUEAXH_X86_REG_RAX:
-    case CPUEAXH_X86_REG_RCX:
-    case CPUEAXH_X86_REG_RDX:
-    case CPUEAXH_X86_REG_RBX:
-    case CPUEAXH_X86_REG_RSP:
-    case CPUEAXH_X86_REG_RBP:
-    case CPUEAXH_X86_REG_RSI:
-    case CPUEAXH_X86_REG_RDI:
-    case CPUEAXH_X86_REG_R8:
-    case CPUEAXH_X86_REG_R9:
-    case CPUEAXH_X86_REG_R10:
-    case CPUEAXH_X86_REG_R11:
-    case CPUEAXH_X86_REG_R12:
-    case CPUEAXH_X86_REG_R13:
-    case CPUEAXH_X86_REG_R14:
-    case CPUEAXH_X86_REG_R15:
-        context->regs[regid] = *input;
+    if (regid >= CPUEAXH_X86_REG_RAX && regid <= CPUEAXH_X86_REG_R15) {
+        context->regs[regid] = *reinterpret_cast<const uint64_t*>(value);
         return CPUEAXH_ERR_OK;
+    }
+    if (regid >= CPUEAXH_X86_REG_XMM0 && regid <= CPUEAXH_X86_REG_XMM15) {
+        cpueaxh_copy_xmm_in(&context->xmm[regid - CPUEAXH_X86_REG_XMM0], reinterpret_cast<const cpueaxh_x86_xmm*>(value));
+        return CPUEAXH_ERR_OK;
+    }
+    if (regid >= CPUEAXH_X86_REG_YMM0 && regid <= CPUEAXH_X86_REG_YMM15) {
+        const cpueaxh_x86_ymm* input = reinterpret_cast<const cpueaxh_x86_ymm*>(value);
+        const int ymm_index = regid - CPUEAXH_X86_REG_YMM0;
+        cpueaxh_copy_xmm_in(&context->xmm[ymm_index], &input->lower);
+        cpueaxh_copy_xmm_in(&context->ymm_upper[ymm_index], &input->upper);
+        return CPUEAXH_ERR_OK;
+    }
+    if (regid >= CPUEAXH_X86_REG_MM0 && regid <= CPUEAXH_X86_REG_MM7) {
+        context->mm[regid - CPUEAXH_X86_REG_MM0] = *reinterpret_cast<const uint64_t*>(value);
+        return CPUEAXH_ERR_OK;
+    }
+
+    const int control_reg_index = cpueaxh_control_reg_index_from_regid(regid);
+    if (control_reg_index >= 0) {
+        context->control_regs[control_reg_index] = *reinterpret_cast<const uint64_t*>(value);
+        return CPUEAXH_ERR_OK;
+    }
+
+    switch (regid) {
     case CPUEAXH_X86_REG_RIP:
-        context->rip = *input;
+        context->rip = *reinterpret_cast<const uint64_t*>(value);
         return CPUEAXH_ERR_OK;
     case CPUEAXH_X86_REG_EFLAGS:
-        context->rflags = *input;
-        return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_GS_SELECTOR:
-        context->gs.selector = (uint16_t)(*input & 0xFFFFu);
-        return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_GS_BASE:
-        context->gs.descriptor.base = *input;
+        context->rflags = *reinterpret_cast<const uint64_t*>(value);
         return CPUEAXH_ERR_OK;
     case CPUEAXH_X86_REG_CPL:
-        context->cpl = (uint8_t)(*input & 0x3u);
+        context->cpl = (uint8_t)(*reinterpret_cast<const uint64_t*>(value) & 0x3u);
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR0:
-        context->control_regs[REG_CR0] = *input;
+    case CPUEAXH_X86_REG_MXCSR:
+        context->mxcsr = *reinterpret_cast<const uint32_t*>(value);
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR2:
-        context->control_regs[REG_CR2] = *input;
+    case CPUEAXH_X86_REG_GDTR_BASE:
+        context->gdtr_base = *reinterpret_cast<const uint64_t*>(value);
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR3:
-        context->control_regs[REG_CR3] = *input;
+    case CPUEAXH_X86_REG_GDTR_LIMIT:
+        context->gdtr_limit = *reinterpret_cast<const uint16_t*>(value);
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR4:
-        context->control_regs[REG_CR4] = *input;
+    case CPUEAXH_X86_REG_LDTR_BASE:
+        context->ldtr_base = *reinterpret_cast<const uint64_t*>(value);
         return CPUEAXH_ERR_OK;
-    case CPUEAXH_X86_REG_CR8:
-        context->control_regs[REG_CR8] = *input;
+    case CPUEAXH_X86_REG_LDTR_LIMIT:
+        context->ldtr_limit = *reinterpret_cast<const uint16_t*>(value);
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_EXCEPTION_CODE:
+        context->exception.code = *reinterpret_cast<const uint32_t*>(value);
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_EXCEPTION_ERROR_CODE:
+        context->exception.error_code = *reinterpret_cast<const uint32_t*>(value);
+        return CPUEAXH_ERR_OK;
+    case CPUEAXH_X86_REG_PROCESSOR_ID:
+        context->processor_id = *reinterpret_cast<const uint32_t*>(value);
         return CPUEAXH_ERR_OK;
     default:
-        return CPUEAXH_ERR_ARG;
+        break;
     }
+
+    SegmentRegister* segment = cpueaxh_select_segment(context, regid);
+    if (segment) {
+        switch (cpueaxh_segment_field_kind_from_regid(regid)) {
+        case CPUEAXH_SEGMENT_FIELD_SELECTOR:
+            segment->selector = *reinterpret_cast<const uint16_t*>(value);
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_BASE:
+            segment->descriptor.base = *reinterpret_cast<const uint64_t*>(value);
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_LIMIT:
+            segment->descriptor.limit = *reinterpret_cast<const uint32_t*>(value);
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_TYPE:
+            segment->descriptor.type = (uint8_t)(*reinterpret_cast<const uint32_t*>(value) & 0x1Fu);
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_DPL:
+            segment->descriptor.dpl = (uint8_t)(*reinterpret_cast<const uint32_t*>(value) & 0x3u);
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_PRESENT:
+            segment->descriptor.present = (*reinterpret_cast<const uint32_t*>(value) & 0x1u) != 0;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_GRANULARITY:
+            segment->descriptor.granularity = (*reinterpret_cast<const uint32_t*>(value) & 0x1u) != 0;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_DB:
+            segment->descriptor.db = (*reinterpret_cast<const uint32_t*>(value) & 0x1u) != 0;
+            return CPUEAXH_ERR_OK;
+        case CPUEAXH_SEGMENT_FIELD_LONG_MODE:
+            segment->descriptor.long_mode = (*reinterpret_cast<const uint32_t*>(value) & 0x1u) != 0;
+            return CPUEAXH_ERR_OK;
+        default:
+            break;
+        }
+    }
+
+    return CPUEAXH_ERR_ARG;
 }
 
 static bool cpueaxh_is_optional_escape_instruction(cpueaxh_escape_insn_id instruction_id) {
@@ -678,6 +980,81 @@ extern "C" cpueaxh_err cpueaxh_set_memory_mode(cpueaxh_engine* engine, uint32_t 
     }
 
     return cpueaxh_apply_memory_mode(engine, memory_mode);
+}
+
+extern "C" cpueaxh_err cpueaxh_host_write_isolation_set(cpueaxh_engine* engine, uint32_t enabled) {
+    cpueaxh_err error = cpueaxh_validate_engine(engine);
+    if (error != CPUEAXH_ERR_OK) {
+        return error;
+    }
+    if (engine->memory_mode != CPUEAXH_MEMORY_MODE_HOST) {
+        return CPUEAXH_ERR_MODE;
+    }
+
+    if (!mm_set_host_write_isolation(&engine->memory_manager, enabled != 0)) {
+        return CPUEAXH_ERR_NOMEM;
+    }
+    return CPUEAXH_ERR_OK;
+}
+
+extern "C" cpueaxh_err cpueaxh_host_write_isolation_group_create(cpueaxh_engine* engine, cpueaxh_write_isolation_handle* out_group) {
+    cpueaxh_err error = cpueaxh_validate_engine(engine);
+    if (error != CPUEAXH_ERR_OK || !out_group) {
+        return error != CPUEAXH_ERR_OK ? error : CPUEAXH_ERR_ARG;
+    }
+    if (engine->memory_mode != CPUEAXH_MEMORY_MODE_HOST) {
+        return CPUEAXH_ERR_MODE;
+    }
+
+    return mm_host_write_isolation_group_create(&engine->memory_manager, out_group) ? CPUEAXH_ERR_OK : CPUEAXH_ERR_NOMEM;
+}
+
+extern "C" cpueaxh_err cpueaxh_host_write_isolation_group_select(cpueaxh_engine* engine, cpueaxh_write_isolation_handle group) {
+    cpueaxh_err error = cpueaxh_validate_engine(engine);
+    if (error != CPUEAXH_ERR_OK || group == 0) {
+        return error != CPUEAXH_ERR_OK ? error : CPUEAXH_ERR_ARG;
+    }
+    if (engine->memory_mode != CPUEAXH_MEMORY_MODE_HOST) {
+        return CPUEAXH_ERR_MODE;
+    }
+
+    return mm_host_write_isolation_group_select(&engine->memory_manager, group) ? CPUEAXH_ERR_OK : CPUEAXH_ERR_ARG;
+}
+
+extern "C" cpueaxh_err cpueaxh_host_write_isolation_group_delete(cpueaxh_engine* engine, cpueaxh_write_isolation_handle group) {
+    cpueaxh_err error = cpueaxh_validate_engine(engine);
+    if (error != CPUEAXH_ERR_OK || group == 0) {
+        return error != CPUEAXH_ERR_OK ? error : CPUEAXH_ERR_ARG;
+    }
+    if (engine->memory_mode != CPUEAXH_MEMORY_MODE_HOST) {
+        return CPUEAXH_ERR_MODE;
+    }
+
+    return mm_host_write_isolation_group_delete(&engine->memory_manager, group) ? CPUEAXH_ERR_OK : CPUEAXH_ERR_ARG;
+}
+
+extern "C" cpueaxh_err cpueaxh_host_write_isolation_exempt_add(cpueaxh_engine* engine, uint64_t address, size_t size) {
+    cpueaxh_err error = cpueaxh_validate_engine(engine);
+    if (error != CPUEAXH_ERR_OK || size == 0 || mm_range_overflows(address, (uint64_t)size)) {
+        return error != CPUEAXH_ERR_OK ? error : CPUEAXH_ERR_ARG;
+    }
+    if (engine->memory_mode != CPUEAXH_MEMORY_MODE_HOST) {
+        return CPUEAXH_ERR_MODE;
+    }
+
+    return mm_add_host_write_isolation_exempt(&engine->memory_manager, address, (uint64_t)size) ? CPUEAXH_ERR_OK : CPUEAXH_ERR_NOMEM;
+}
+
+extern "C" cpueaxh_err cpueaxh_host_write_isolation_exempt_del(cpueaxh_engine* engine, uint64_t address, size_t size) {
+    cpueaxh_err error = cpueaxh_validate_engine(engine);
+    if (error != CPUEAXH_ERR_OK || size == 0) {
+        return error != CPUEAXH_ERR_OK ? error : CPUEAXH_ERR_ARG;
+    }
+    if (engine->memory_mode != CPUEAXH_MEMORY_MODE_HOST) {
+        return CPUEAXH_ERR_MODE;
+    }
+
+    return mm_del_host_write_isolation_exempt(&engine->memory_manager, address, (uint64_t)size) ? CPUEAXH_ERR_OK : CPUEAXH_ERR_ARG;
 }
 
 extern "C" cpueaxh_err cpueaxh_mem_map(cpueaxh_engine* engine, uint64_t address, size_t size, uint32_t perms) {
@@ -864,6 +1241,32 @@ extern "C" cpueaxh_err cpueaxh_reg_read(cpueaxh_engine* engine, int regid, void*
         return error;
     }
     return cpueaxh_reg_read_raw(&engine->context, regid, value);
+}
+
+extern "C" cpueaxh_err cpueaxh_context_write(cpueaxh_engine* engine, const cpueaxh_x86_context* context) {
+    cpueaxh_err error = cpueaxh_validate_engine(engine);
+    if (error != CPUEAXH_ERR_OK) {
+        return error;
+    }
+    if (!context) {
+        return CPUEAXH_ERR_ARG;
+    }
+
+    cpueaxh_context_in(&engine->context, context);
+    return CPUEAXH_ERR_OK;
+}
+
+extern "C" cpueaxh_err cpueaxh_context_read(const cpueaxh_engine* engine, cpueaxh_x86_context* context) {
+    cpueaxh_err error = cpueaxh_validate_engine(const_cast<cpueaxh_engine*>(engine));
+    if (error != CPUEAXH_ERR_OK) {
+        return error;
+    }
+    if (!context) {
+        return CPUEAXH_ERR_ARG;
+    }
+
+    cpueaxh_context_out(context, &engine->context);
+    return CPUEAXH_ERR_OK;
 }
 
 extern "C" cpueaxh_err cpueaxh_set_processor_id(cpueaxh_engine* engine, uint32_t processor_id) {

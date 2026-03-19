@@ -217,10 +217,21 @@ Major coverage includes:
   - `movups`
   - `movaps`
   - `movss`
+  - `movd`
+  - `movq`
   - `movdq`
+  - `pshufd`
+  - `vinsertf128`
   - multiple `sse_*` groups
   - multiple `sse2_*` groups
+  - `punpcklbw`
+  - `punpcklwd`
+  - `punpckldq`
+  - `punpcklqdq`
+  - `pcmpistrm`
   - `pcmpistri`
+  - `pcmpestrm`
+  - `pcmpestri`
   - multiple VEX-encoded `AVX` groups
   - part of `AVX2`
 

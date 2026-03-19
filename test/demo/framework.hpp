@@ -37,12 +37,16 @@ constexpr std::uint64_t kFlagDF = 1ull << 10;
 constexpr std::uint64_t kFlagOF = 1ull << 11;
 constexpr std::uint64_t kStatusMask = kFlagCF | kFlagPF | kFlagAF | kFlagZF | kFlagSF | kFlagOF;
 constexpr std::uint64_t kLogicMask = kFlagCF | kFlagPF | kFlagZF | kFlagSF | kFlagOF;
+constexpr std::uint64_t kPcmpstrMask = kFlagCF | kFlagZF | kFlagSF | kFlagOF;
 constexpr std::uint64_t kIncDecMask = kFlagPF | kFlagAF | kFlagZF | kFlagSF | kFlagOF;
 constexpr std::uint64_t kRotationMask = kFlagCF | kFlagOF;
 constexpr std::uint64_t kBitTestMask = kFlagCF;
 constexpr std::uint64_t kBitScanMask = kFlagZF;
 constexpr std::uint64_t kSeedCount = 128;
 constexpr std::uint64_t kExceptionSeedCount = 128;
+constexpr std::uint64_t kHostIsolationSeedCount = 64;
+constexpr std::uint64_t kHostIsolationGroupSeedCount = 32;
+constexpr std::uint64_t kContextApiSeedCount = 128;
 constexpr std::uint64_t kGuestCodeBase = 0x100000;
 constexpr std::uint64_t kGuestStackBase = 0x200000;
 constexpr std::size_t kCodePageSize = 0x1000;
@@ -222,7 +226,22 @@ enum class VectorProgram : std::uint8_t {
     Pxor,
     Pand,
     Por,
+    Vinsertf128,
+    MovdMmReg,
+    MovqMmReg,
+    MovdMmMem,
+    MovqMmMem,
+    MovdXmmReg,
+    MovqXmmReg,
+    MovdXmmMem,
+    MovqXmmMem,
+    Punpcklbw,
+    Punpcklwd,
+    Punpckldq,
+    Punpcklqdq,
     Pcmpeqb,
+    Pcmpeqw,
+    Pcmpeqd,
     Pshufd,
     Pslldq,
     Psrldq,
@@ -234,6 +253,9 @@ enum class VectorProgram : std::uint8_t {
     Aeskeygenassist,
     Roundsd,
     Roundss,
+    Pcmpestrm,
+    Pcmpestri,
+    Pcmpistrm,
 };
 
 enum class ControlProgram : std::uint8_t {
@@ -281,14 +303,19 @@ struct Failure {
 };
 
 struct HostFeatures {
+    bool avx = false;
     bool ssse3 = false;
     bool sse41 = false;
+    bool sse42 = false;
     bool aes = false;
     bool rdpid = false;
 };
 
 inline constexpr std::array<std::uint8_t, 4> kAesKeygenAssistImmediates = {{ 0x01, 0x1B, 0x36, 0x80 }};
 inline constexpr std::array<std::uint8_t, 6> kRoundImmediates = {{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x08 }};
+inline constexpr std::array<std::uint8_t, 8> kPshufdImmediates = {{ 0x00, 0x1B, 0x4E, 0x93, 0x39, 0xC6, 0xFF, 0x72 }};
+inline constexpr std::array<std::uint8_t, 8> kPcmpestriImmediates = {{ 0x00, 0x08, 0x10, 0x18, 0x40, 0x48, 0x70, 0x78 }};
+inline constexpr std::array<std::uint8_t, 4> kVinsertf128Immediates = {{ 0x00, 0x01, 0x40, 0x7F }};
 
 inline constexpr std::array<PairSpec, 3> kBinaryPairs = {{
     { Reg::RAX, Reg::RBX, "rax_rbx" },
@@ -413,8 +440,16 @@ inline HostFeatures query_host_features() {
     const int max_leaf = cpu_info[0];
     if (max_leaf >= 1) {
         __cpuidex(cpu_info, 1, 0);
+        const bool has_xsave = (cpu_info[2] & (1 << 26)) != 0;
+        const bool has_osxsave = (cpu_info[2] & (1 << 27)) != 0;
+        const bool has_avx = (cpu_info[2] & (1 << 28)) != 0;
+        if (has_xsave && has_osxsave && has_avx) {
+            const unsigned __int64 xcr0 = _xgetbv(0);
+            features.avx = (xcr0 & 0x6) == 0x6;
+        }
         features.ssse3 = (cpu_info[2] & (1 << 9)) != 0;
         features.sse41 = (cpu_info[2] & (1 << 19)) != 0;
+        features.sse42 = (cpu_info[2] & (1 << 20)) != 0;
         features.aes = (cpu_info[2] & (1 << 25)) != 0;
     }
     if (max_leaf >= 7) {
@@ -432,6 +467,154 @@ inline cpueaxh_x86_context make_initial_context(std::uint64_t seed) {
     context.rflags = make_initial_flags(seed);
     context.mxcsr = static_cast<std::uint32_t>(kInitialMxcsr);
     return context;
+}
+
+inline cpueaxh_x86_xmm make_seeded_xmm(std::uint64_t seed, std::uint64_t salt) {
+    cpueaxh_x86_xmm value{};
+    value.low = seeded(seed, salt);
+    value.high = seeded(seed, salt + 1);
+    return value;
+}
+
+inline cpueaxh_x86_ymm make_seeded_ymm(std::uint64_t seed, std::uint64_t salt) {
+    cpueaxh_x86_ymm value{};
+    value.lower = make_seeded_xmm(seed, salt);
+    value.upper = make_seeded_xmm(seed, salt + 2);
+    return value;
+}
+
+inline cpueaxh_x86_context make_extended_context(std::uint64_t seed) {
+    cpueaxh_x86_context context = make_initial_context(seed);
+    for (std::size_t index = 0; index < 16; ++index) {
+        context.xmm[index] = make_seeded_xmm(seed, 0x500 + index * 8);
+        context.ymm_upper[index] = make_seeded_xmm(seed, 0x580 + index * 8);
+        context.control_regs[index] = seeded(seed, 0x900 + index);
+    }
+    for (std::size_t index = 0; index < 8; ++index) {
+        context.mm[index] = seeded(seed, 0x700 + index);
+    }
+    context.mxcsr = static_cast<std::uint32_t>(0x1F80u | (seeded(seed, 0x800) & 0x1F3Fu));
+    context.es.selector = static_cast<std::uint16_t>(seeded(seed, 0xA00) & 0xFFF8u);
+    context.cs.selector = static_cast<std::uint16_t>(seeded(seed, 0xA01) & 0xFFF8u);
+    context.ss.selector = static_cast<std::uint16_t>(seeded(seed, 0xA02) & 0xFFF8u);
+    context.ds.selector = static_cast<std::uint16_t>(seeded(seed, 0xA03) & 0xFFF8u);
+    context.fs.selector = static_cast<std::uint16_t>(seeded(seed, 0xA04) & 0xFFF8u);
+    context.gs.selector = static_cast<std::uint16_t>(seeded(seed, 0xA05) & 0xFFF8u);
+    context.es.descriptor.base = seeded(seed, 0xA10);
+    context.cs.descriptor.base = seeded(seed, 0xA11);
+    context.ss.descriptor.base = seeded(seed, 0xA12);
+    context.ds.descriptor.base = seeded(seed, 0xA13);
+    context.fs.descriptor.base = seeded(seed, 0xA14);
+    context.gs.descriptor.base = seeded(seed, 0xA15);
+    context.es.descriptor.limit = narrow32(seeded(seed, 0xA20));
+    context.cs.descriptor.limit = narrow32(seeded(seed, 0xA21));
+    context.ss.descriptor.limit = narrow32(seeded(seed, 0xA22));
+    context.ds.descriptor.limit = narrow32(seeded(seed, 0xA23));
+    context.fs.descriptor.limit = narrow32(seeded(seed, 0xA24));
+    context.gs.descriptor.limit = narrow32(seeded(seed, 0xA25));
+    context.es.descriptor.type = narrow8(seeded(seed, 0xA30)) & 0x1Fu;
+    context.cs.descriptor.type = narrow8(seeded(seed, 0xA31)) & 0x1Fu;
+    context.ss.descriptor.type = narrow8(seeded(seed, 0xA32)) & 0x1Fu;
+    context.ds.descriptor.type = narrow8(seeded(seed, 0xA33)) & 0x1Fu;
+    context.fs.descriptor.type = narrow8(seeded(seed, 0xA34)) & 0x1Fu;
+    context.gs.descriptor.type = narrow8(seeded(seed, 0xA35)) & 0x1Fu;
+    context.es.descriptor.dpl = narrow8(seeded(seed, 0xA40)) & 0x3u;
+    context.cs.descriptor.dpl = narrow8(seeded(seed, 0xA41)) & 0x3u;
+    context.ss.descriptor.dpl = narrow8(seeded(seed, 0xA42)) & 0x3u;
+    context.ds.descriptor.dpl = narrow8(seeded(seed, 0xA43)) & 0x3u;
+    context.fs.descriptor.dpl = narrow8(seeded(seed, 0xA44)) & 0x3u;
+    context.gs.descriptor.dpl = narrow8(seeded(seed, 0xA45)) & 0x3u;
+    context.es.descriptor.present = narrow8(seeded(seed, 0xA50)) & 1u;
+    context.cs.descriptor.present = narrow8(seeded(seed, 0xA51)) & 1u;
+    context.ss.descriptor.present = narrow8(seeded(seed, 0xA52)) & 1u;
+    context.ds.descriptor.present = narrow8(seeded(seed, 0xA53)) & 1u;
+    context.fs.descriptor.present = narrow8(seeded(seed, 0xA54)) & 1u;
+    context.gs.descriptor.present = narrow8(seeded(seed, 0xA55)) & 1u;
+    context.es.descriptor.granularity = narrow8(seeded(seed, 0xA60)) & 1u;
+    context.cs.descriptor.granularity = narrow8(seeded(seed, 0xA61)) & 1u;
+    context.ss.descriptor.granularity = narrow8(seeded(seed, 0xA62)) & 1u;
+    context.ds.descriptor.granularity = narrow8(seeded(seed, 0xA63)) & 1u;
+    context.fs.descriptor.granularity = narrow8(seeded(seed, 0xA64)) & 1u;
+    context.gs.descriptor.granularity = narrow8(seeded(seed, 0xA65)) & 1u;
+    context.es.descriptor.db = narrow8(seeded(seed, 0xA70)) & 1u;
+    context.cs.descriptor.db = narrow8(seeded(seed, 0xA71)) & 1u;
+    context.ss.descriptor.db = narrow8(seeded(seed, 0xA72)) & 1u;
+    context.ds.descriptor.db = narrow8(seeded(seed, 0xA73)) & 1u;
+    context.fs.descriptor.db = narrow8(seeded(seed, 0xA74)) & 1u;
+    context.gs.descriptor.db = narrow8(seeded(seed, 0xA75)) & 1u;
+    context.es.descriptor.long_mode = narrow8(seeded(seed, 0xA80)) & 1u;
+    context.cs.descriptor.long_mode = narrow8(seeded(seed, 0xA81)) & 1u;
+    context.ss.descriptor.long_mode = narrow8(seeded(seed, 0xA82)) & 1u;
+    context.ds.descriptor.long_mode = narrow8(seeded(seed, 0xA83)) & 1u;
+    context.fs.descriptor.long_mode = narrow8(seeded(seed, 0xA84)) & 1u;
+    context.gs.descriptor.long_mode = narrow8(seeded(seed, 0xA85)) & 1u;
+    context.gdtr_base = seeded(seed, 0xB00);
+    context.gdtr_limit = static_cast<std::uint16_t>(seeded(seed, 0xB01) & 0xFFFFu);
+    context.ldtr_base = seeded(seed, 0xB02);
+    context.ldtr_limit = static_cast<std::uint16_t>(seeded(seed, 0xB03) & 0xFFFFu);
+    context.cpl = static_cast<std::uint8_t>(seeded(seed, 0xB04) & 0x3u);
+    context.code_exception = static_cast<std::uint32_t>(CPUEAXH_EXCEPTION_UD + ((seeded(seed, 0xB05) % 3u)));
+    context.error_code_exception = narrow32(seeded(seed, 0xB06));
+    context.processor_id = narrow32(seeded(seed, 0xB07));
+    return context;
+}
+
+inline bool equal_xmm(const cpueaxh_x86_xmm& left, const cpueaxh_x86_xmm& right) {
+    return left.low == right.low && left.high == right.high;
+}
+
+inline bool equal_segment_descriptor(const cpueaxh_x86_segment_descriptor& left, const cpueaxh_x86_segment_descriptor& right) {
+    return left.base == right.base &&
+        left.limit == right.limit &&
+        left.type == right.type &&
+        left.dpl == right.dpl &&
+        left.present == right.present &&
+        left.granularity == right.granularity &&
+        left.db == right.db &&
+        left.long_mode == right.long_mode;
+}
+
+inline bool equal_segment(const cpueaxh_x86_segment& left, const cpueaxh_x86_segment& right) {
+    return left.selector == right.selector && equal_segment_descriptor(left.descriptor, right.descriptor);
+}
+
+inline bool equal_context(const cpueaxh_x86_context& left, const cpueaxh_x86_context& right) {
+    for (std::size_t index = 0; index < 16; ++index) {
+        if (left.regs[index] != right.regs[index]) {
+            return false;
+        }
+        if (!equal_xmm(left.xmm[index], right.xmm[index])) {
+            return false;
+        }
+        if (!equal_xmm(left.ymm_upper[index], right.ymm_upper[index])) {
+            return false;
+        }
+        if (left.control_regs[index] != right.control_regs[index]) {
+            return false;
+        }
+    }
+    for (std::size_t index = 0; index < 8; ++index) {
+        if (left.mm[index] != right.mm[index]) {
+            return false;
+        }
+    }
+    return left.rip == right.rip &&
+        left.rflags == right.rflags &&
+        left.mxcsr == right.mxcsr &&
+        equal_segment(left.es, right.es) &&
+        equal_segment(left.cs, right.cs) &&
+        equal_segment(left.ss, right.ss) &&
+        equal_segment(left.ds, right.ds) &&
+        equal_segment(left.fs, right.fs) &&
+        equal_segment(left.gs, right.gs) &&
+        left.gdtr_base == right.gdtr_base &&
+        left.gdtr_limit == right.gdtr_limit &&
+        left.ldtr_base == right.ldtr_base &&
+        left.ldtr_limit == right.ldtr_limit &&
+        left.cpl == right.cpl &&
+        left.code_exception == right.code_exception &&
+        left.error_code_exception == right.error_code_exception &&
+        left.processor_id == right.processor_id;
 }
 
 inline std::array<std::uint8_t, kDataSize> make_initial_data(std::uint64_t seed) {
@@ -519,8 +702,25 @@ public:
         }
     }
 
+    void emit_vex3(bool w, std::uint8_t map_select, std::uint8_t vvvv, bool l, std::uint8_t pp, std::uint8_t reg, std::uint8_t index, std::uint8_t rm) {
+        emit8(0xC4);
+        emit8(static_cast<std::uint8_t>(((reg & 8u) == 0 ? 0x80u : 0x00u) |
+                                        ((index & 8u) == 0 ? 0x40u : 0x00u) |
+                                        ((rm & 8u) == 0 ? 0x20u : 0x00u) |
+                                        (map_select & 0x1Fu)));
+        emit8(static_cast<std::uint8_t>((w ? 0x80u : 0x00u) |
+                                        (((~vvvv) & 0x0Fu) << 3) |
+                                        (l ? 0x04u : 0x00u) |
+                                        (pp & 0x03u)));
+    }
+
     void rip_rel32(Label label) {
-        patches_.push_back(Patch{ label.id, bytes_.size(), 4 });
+        patches_.push_back(Patch{ label.id, bytes_.size(), 4, 0 });
+        emit32(0);
+    }
+
+    void rip_rel32(Label label, std::size_t trailing_size) {
+        patches_.push_back(Patch{ label.id, bytes_.size(), 4, trailing_size });
         emit32(0);
     }
 
@@ -529,7 +729,7 @@ public:
     }
 
     void rel8(Label label) {
-        patches_.push_back(Patch{ label.id, bytes_.size(), 1 });
+        patches_.push_back(Patch{ label.id, bytes_.size(), 1, 0 });
         emit8(0);
     }
 
@@ -857,6 +1057,35 @@ public:
         rip_rel32(label);
     }
 
+    void vmovups_ymm_load(Reg dst, Label label) {
+        emit_vex3(false, 0x01, 0x00, true, 0x00, static_cast<std::uint8_t>(dst), 0, 5);
+        emit8(0x10);
+        emit_modrm(0, static_cast<std::uint8_t>(dst), 5);
+        rip_rel32(label);
+    }
+
+    void vmovups_ymm_store(Label label, Reg src) {
+        emit_vex3(false, 0x01, 0x00, true, 0x00, static_cast<std::uint8_t>(src), 0, 5);
+        emit8(0x11);
+        emit_modrm(0, static_cast<std::uint8_t>(src), 5);
+        rip_rel32(label);
+    }
+
+    void vinsertf128(Reg dst, Reg src1, Reg src2, std::uint8_t imm) {
+        emit_vex3(false, 0x03, static_cast<std::uint8_t>(src1), true, 0x01, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src2));
+        emit8(0x18);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src2));
+        emit8(imm);
+    }
+
+    void vinsertf128_mem(Reg dst, Reg src1, Label label, std::uint8_t imm) {
+        emit_vex3(false, 0x03, static_cast<std::uint8_t>(src1), true, 0x01, static_cast<std::uint8_t>(dst), 0, 5);
+        emit8(0x18);
+        emit_modrm(0, static_cast<std::uint8_t>(dst), 5);
+        rip_rel32(label, 1);
+        emit8(imm);
+    }
+
     void paddq(Reg dst, Reg src) {
         emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
         emit8(0x66);
@@ -889,11 +1118,157 @@ public:
         emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
     }
 
+    void movd_mm_reg(Reg dst, Reg src) {
+        emit_rex(false, 0, 0, static_cast<std::uint8_t>(src));
+        emit8(0x0F);
+        emit8(0x6E);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void movq_mm_reg(Reg dst, Reg src) {
+        emit_rex(true, 0, 0, static_cast<std::uint8_t>(src));
+        emit8(0x0F);
+        emit8(0x6E);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void movd_mm_mem(Reg dst, Label label) {
+        emit_rex(false, 0, 0, 5);
+        emit8(0x0F);
+        emit8(0x6E);
+        emit_modrm(0, static_cast<std::uint8_t>(dst), 5);
+        rip_rel32(label);
+    }
+
+    void movq_mm_mem(Reg dst, Label label) {
+        emit_rex(true, 0, 0, 5);
+        emit8(0x0F);
+        emit8(0x6E);
+        emit_modrm(0, static_cast<std::uint8_t>(dst), 5);
+        rip_rel32(label);
+    }
+
+    void movd_mem_mm(Label label, Reg src) {
+        emit_rex(false, 0, 0, 5);
+        emit8(0x0F);
+        emit8(0x7E);
+        emit_modrm(0, static_cast<std::uint8_t>(src), 5);
+        rip_rel32(label);
+    }
+
+    void movq_mem_mm(Label label, Reg src) {
+        emit_rex(true, 0, 0, 5);
+        emit8(0x0F);
+        emit8(0x7E);
+        emit_modrm(0, static_cast<std::uint8_t>(src), 5);
+        rip_rel32(label);
+    }
+
+    void movd_xmm_reg(Reg dst, Reg src) {
+        emit8(0x66);
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x0F);
+        emit8(0x6E);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void movq_xmm_reg(Reg dst, Reg src) {
+        emit8(0x66);
+        emit_rex(true, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x0F);
+        emit8(0x6E);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void movd_xmm_mem(Reg dst, Label label) {
+        emit8(0x66);
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, 5);
+        emit8(0x0F);
+        emit8(0x6E);
+        emit_modrm(0, static_cast<std::uint8_t>(dst), 5);
+        rip_rel32(label);
+    }
+
+    void movq_xmm_mem(Reg dst, Label label) {
+        emit8(0x66);
+        emit_rex(true, static_cast<std::uint8_t>(dst), 0, 5);
+        emit8(0x0F);
+        emit8(0x6E);
+        emit_modrm(0, static_cast<std::uint8_t>(dst), 5);
+        rip_rel32(label);
+    }
+
+    void movd_mem_xmm(Label label, Reg src) {
+        emit8(0x66);
+        emit_rex(false, static_cast<std::uint8_t>(src), 0, 5);
+        emit8(0x0F);
+        emit8(0x7E);
+        emit_modrm(0, static_cast<std::uint8_t>(src), 5);
+        rip_rel32(label);
+    }
+
+    void movq_mem_xmm(Label label, Reg src) {
+        emit8(0x66);
+        emit_rex(true, static_cast<std::uint8_t>(src), 0, 5);
+        emit8(0x0F);
+        emit8(0x7E);
+        emit_modrm(0, static_cast<std::uint8_t>(src), 5);
+        rip_rel32(label);
+    }
+
+    void punpcklbw(Reg dst, Reg src) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x60);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void punpcklwd(Reg dst, Reg src) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x61);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void punpckldq(Reg dst, Reg src) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x62);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void punpcklqdq(Reg dst, Reg src) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x6C);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
     void pcmpeqb(Reg dst, Reg src) {
         emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
         emit8(0x66);
         emit8(0x0F);
         emit8(0x74);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void pcmpeqw(Reg dst, Reg src) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x75);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+    }
+
+    void pcmpeqd(Reg dst, Reg src) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x76);
         emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
     }
 
@@ -903,6 +1278,16 @@ public:
         emit8(0x0F);
         emit8(0x70);
         emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+        emit8(imm);
+    }
+
+    void pshufd_mem(Reg dst, Label label, std::uint8_t imm) {
+        emit8(0x66);
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, 5);
+        emit8(0x0F);
+        emit8(0x70);
+        emit_modrm(0, static_cast<std::uint8_t>(dst), 5);
+        rip_rel32(label, 1);
         emit8(imm);
     }
 
@@ -981,13 +1366,43 @@ public:
         emit8(imm);
     }
 
+    void pcmpestri(Reg dst, Reg src, std::uint8_t imm) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x3A);
+        emit8(0x61);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+        emit8(imm);
+    }
+
+    void pcmpestrm(Reg dst, Reg src, std::uint8_t imm) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x3A);
+        emit8(0x60);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+        emit8(imm);
+    }
+
+    void pcmpistrm(Reg dst, Reg src, std::uint8_t imm) {
+        emit_rex(false, static_cast<std::uint8_t>(dst), 0, static_cast<std::uint8_t>(src));
+        emit8(0x66);
+        emit8(0x0F);
+        emit8(0x3A);
+        emit8(0x62);
+        emit_modrm(3, static_cast<std::uint8_t>(dst), static_cast<std::uint8_t>(src));
+        emit8(imm);
+    }
+
     bool finalize() {
         for (const Patch& patch : patches_) {
             const std::size_t target = labels_[patch.label_id];
             if (target == static_cast<std::size_t>(-1)) {
                 return false;
             }
-            const std::int64_t next = static_cast<std::int64_t>(patch.offset + patch.size);
+            const std::int64_t next = static_cast<std::int64_t>(patch.offset + patch.size + patch.trailing_size);
             const std::int64_t disp = static_cast<std::int64_t>(target) - next;
             if (patch.size == 4) {
                 const std::int32_t value = static_cast<std::int32_t>(disp);
@@ -1012,6 +1427,7 @@ private:
         std::size_t label_id;
         std::size_t offset;
         std::size_t size;
+        std::size_t trailing_size;
     };
 
     std::vector<std::uint8_t> bytes_;
@@ -1101,8 +1517,31 @@ inline std::vector<ProgramSpec> make_specs(const HostFeatures& features) {
     specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pxor), 0, 0, "pxor" });
     specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pand), 0, 0, "pand" });
     specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Por), 0, 0, "por" });
+    if (features.avx) {
+        for (std::size_t index = 0; index < kVinsertf128Immediates.size(); ++index) {
+            specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Vinsertf128), static_cast<std::uint32_t>(index), 0, "vinsertf128_reg_imm" + std::to_string(kVinsertf128Immediates[index]) });
+            specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Vinsertf128), static_cast<std::uint32_t>(index + kVinsertf128Immediates.size()), 0, "vinsertf128_mem_imm" + std::to_string(kVinsertf128Immediates[index]) });
+        }
+    }
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::MovdMmReg), 0, 0, "movd_mm_reg" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::MovqMmReg), 0, 0, "movq_mm_reg" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::MovdMmMem), 0, 0, "movd_mm_mem" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::MovqMmMem), 0, 0, "movq_mm_mem" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::MovdXmmReg), 0, 0, "movd_xmm_reg" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::MovqXmmReg), 0, 0, "movq_xmm_reg" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::MovdXmmMem), 0, 0, "movd_xmm_mem" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::MovqXmmMem), 0, 0, "movq_xmm_mem" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Punpcklbw), 0, 0, "punpcklbw" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Punpcklwd), 0, 0, "punpcklwd" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Punpckldq), 0, 0, "punpckldq" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Punpcklqdq), 0, 0, "punpcklqdq" });
     specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pcmpeqb), 0, 0, "pcmpeqb" });
-    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pshufd), 0, 0, "pshufd" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pcmpeqw), 0, 0, "pcmpeqw" });
+    specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pcmpeqd), 0, 0, "pcmpeqd" });
+    for (std::size_t index = 0; index < kPshufdImmediates.size(); ++index) {
+        specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pshufd), static_cast<std::uint32_t>(index), 0, "pshufd_reg_imm" + std::to_string(kPshufdImmediates[index]) });
+        specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pshufd), static_cast<std::uint32_t>(index + kPshufdImmediates.size()), 0, "pshufd_mem_imm" + std::to_string(kPshufdImmediates[index]) });
+    }
     specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pslldq), 0, 0, "pslldq" });
     specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Psrldq), 0, 0, "psrldq" });
     specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::PaddqPxor), 0, 0, "paddq_pxor" });
@@ -1121,6 +1560,13 @@ inline std::vector<ProgramSpec> make_specs(const HostFeatures& features) {
         for (std::size_t index = 0; index < kRoundImmediates.size(); ++index) {
             specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Roundsd), static_cast<std::uint32_t>(index), 0, "roundsd_imm" + std::to_string(kRoundImmediates[index]) });
             specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Roundss), static_cast<std::uint32_t>(index), 0, "roundss_imm" + std::to_string(kRoundImmediates[index]) });
+        }
+    }
+    if (features.sse42) {
+        for (std::size_t index = 0; index < kPcmpestriImmediates.size(); ++index) {
+            specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pcmpestrm), static_cast<std::uint32_t>(index), kPcmpstrMask, "pcmpestrm_imm" + std::to_string(kPcmpestriImmediates[index]) });
+            specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pcmpestri), static_cast<std::uint32_t>(index), kPcmpstrMask, "pcmpestri_imm" + std::to_string(kPcmpestriImmediates[index]) });
+            specs.push_back({ Family::VectorOps, static_cast<std::uint32_t>(VectorProgram::Pcmpistrm), static_cast<std::uint32_t>(index), kPcmpstrMask, "pcmpistrm_imm" + std::to_string(kPcmpestriImmediates[index]) });
         }
     }
     specs.push_back({ Family::ControlFlow, static_cast<std::uint32_t>(ControlProgram::JmpSkip), 0, kStatusMask, "jmp_skip" });
@@ -1407,14 +1853,95 @@ inline BuiltCase build_case(const ProgramSpec& spec, std::uint64_t seed) {
             code.por(Reg::RAX, Reg::RCX);
             code.movdqu_store(buffer0, Reg::RAX);
             break;
+        case VectorProgram::Vinsertf128: {
+            const std::uint8_t imm8 = kVinsertf128Immediates[spec.variant % kVinsertf128Immediates.size()];
+            code.vmovups_ymm_load(Reg::RAX, slot0);
+            if (spec.variant < kVinsertf128Immediates.size()) {
+                code.movdqu_load(Reg::RCX, slot2);
+                code.vinsertf128(Reg::RDX, Reg::RAX, Reg::RCX, imm8);
+            }
+            else {
+                code.vinsertf128_mem(Reg::RDX, Reg::RAX, slot2, imm8);
+            }
+            code.vmovups_ymm_store(buffer0, Reg::RDX);
+            break;
+        }
+        case VectorProgram::MovdMmReg:
+            code.movd_mm_reg(Reg::RAX, Reg::R8);
+            code.movd_mem_mm(buffer0, Reg::RAX);
+            break;
+        case VectorProgram::MovqMmReg:
+            code.movq_mm_reg(Reg::RAX, Reg::R9);
+            code.movq_mem_mm(buffer0, Reg::RAX);
+            break;
+        case VectorProgram::MovdMmMem:
+            code.movd_mm_mem(Reg::RAX, slot0);
+            code.movd_mem_mm(buffer0, Reg::RAX);
+            break;
+        case VectorProgram::MovqMmMem:
+            code.movq_mm_mem(Reg::RAX, slot0);
+            code.movq_mem_mm(buffer0, Reg::RAX);
+            break;
+        case VectorProgram::MovdXmmReg:
+            code.movd_xmm_reg(Reg::RAX, Reg::R10);
+            code.movdqu_store(buffer0, Reg::RAX);
+            code.movd_mem_xmm(buffer1, Reg::RAX);
+            break;
+        case VectorProgram::MovqXmmReg:
+            code.movq_xmm_reg(Reg::RAX, Reg::R11);
+            code.movdqu_store(buffer0, Reg::RAX);
+            code.movq_mem_xmm(buffer1, Reg::RAX);
+            break;
+        case VectorProgram::MovdXmmMem:
+            code.movd_xmm_mem(Reg::RAX, slot0);
+            code.movdqu_store(buffer0, Reg::RAX);
+            code.movd_mem_xmm(buffer1, Reg::RAX);
+            break;
+        case VectorProgram::MovqXmmMem:
+            code.movq_xmm_mem(Reg::RAX, slot0);
+            code.movdqu_store(buffer0, Reg::RAX);
+            code.movq_mem_xmm(buffer1, Reg::RAX);
+            break;
+        case VectorProgram::Punpcklbw:
+            code.punpcklbw(Reg::RAX, Reg::RCX);
+            code.movdqu_store(buffer0, Reg::RAX);
+            break;
+        case VectorProgram::Punpcklwd:
+            code.punpcklwd(Reg::RAX, Reg::RCX);
+            code.movdqu_store(buffer0, Reg::RAX);
+            break;
+        case VectorProgram::Punpckldq:
+            code.punpckldq(Reg::RAX, Reg::RCX);
+            code.movdqu_store(buffer0, Reg::RAX);
+            break;
+        case VectorProgram::Punpcklqdq:
+            code.punpcklqdq(Reg::RAX, Reg::RCX);
+            code.movdqu_store(buffer0, Reg::RAX);
+            break;
         case VectorProgram::Pcmpeqb:
             code.pcmpeqb(Reg::RAX, Reg::RCX);
             code.movdqu_store(buffer0, Reg::RAX);
             break;
-        case VectorProgram::Pshufd:
-            code.pshufd(Reg::RAX, Reg::RAX, 0x1Bu);
+        case VectorProgram::Pcmpeqw:
+            code.pcmpeqw(Reg::RAX, Reg::RCX);
             code.movdqu_store(buffer0, Reg::RAX);
             break;
+        case VectorProgram::Pcmpeqd:
+            code.pcmpeqd(Reg::RAX, Reg::RCX);
+            code.movdqu_store(buffer0, Reg::RAX);
+            break;
+        case VectorProgram::Pshufd: {
+            const std::size_t imm_index = spec.variant % kPshufdImmediates.size();
+            const std::uint8_t imm8 = kPshufdImmediates[imm_index];
+            if (spec.variant < kPshufdImmediates.size()) {
+                code.pshufd(Reg::RAX, Reg::RAX, imm8);
+            }
+            else {
+                code.pshufd_mem(Reg::RAX, slot1, imm8);
+            }
+            code.movdqu_store(buffer0, Reg::RAX);
+            break;
+        }
         case VectorProgram::Pslldq:
             code.pslldq(Reg::RAX, 4);
             code.movdqu_store(buffer0, Reg::RAX);
@@ -1457,6 +1984,33 @@ inline BuiltCase build_case(const ProgramSpec& spec, std::uint64_t seed) {
             code.roundss(Reg::RAX, Reg::RCX, kRoundImmediates[spec.variant % kRoundImmediates.size()]);
             code.movdqu_store(buffer0, Reg::RAX);
             break;
+        case VectorProgram::Pcmpestrm: {
+            const std::uint8_t imm8 = kPcmpestriImmediates[spec.variant % kPcmpestriImmediates.size()];
+            const std::int32_t max_length = (imm8 & 0x01u) != 0 ? 8 : 16;
+            const std::int32_t length_a = static_cast<std::int32_t>(seeded(seed, 0x820) % static_cast<std::uint64_t>(max_length * 4 + 1)) - max_length * 2;
+            const std::int32_t length_b = static_cast<std::int32_t>(seeded(seed, 0x821) % static_cast<std::uint64_t>(max_length * 4 + 1)) - max_length * 2;
+            built.initial_context.regs[static_cast<std::size_t>(Reg::RAX)] = static_cast<std::uint64_t>(static_cast<std::int64_t>(length_a));
+            built.initial_context.regs[static_cast<std::size_t>(Reg::RDX)] = static_cast<std::uint64_t>(static_cast<std::int64_t>(length_b));
+            code.pcmpestrm(Reg::RAX, Reg::RCX, imm8);
+            code.movdqu_store(buffer0, Reg::RAX);
+            break;
+        }
+        case VectorProgram::Pcmpestri: {
+            const std::uint8_t imm8 = kPcmpestriImmediates[spec.variant % kPcmpestriImmediates.size()];
+            const std::int32_t max_length = (imm8 & 0x01u) != 0 ? 8 : 16;
+            const std::int32_t length_a = static_cast<std::int32_t>(seeded(seed, 0x830) % static_cast<std::uint64_t>(max_length * 4 + 1)) - max_length * 2;
+            const std::int32_t length_b = static_cast<std::int32_t>(seeded(seed, 0x831) % static_cast<std::uint64_t>(max_length * 4 + 1)) - max_length * 2;
+            built.initial_context.regs[static_cast<std::size_t>(Reg::RAX)] = static_cast<std::uint64_t>(static_cast<std::int64_t>(length_a));
+            built.initial_context.regs[static_cast<std::size_t>(Reg::RDX)] = static_cast<std::uint64_t>(static_cast<std::int64_t>(length_b));
+            code.pcmpestri(Reg::RAX, Reg::RCX, imm8);
+            break;
+        }
+        case VectorProgram::Pcmpistrm: {
+            const std::uint8_t imm8 = kPcmpestriImmediates[spec.variant % kPcmpestriImmediates.size()];
+            code.pcmpistrm(Reg::RAX, Reg::RCX, imm8);
+            code.movdqu_store(buffer0, Reg::RAX);
+            break;
+        }
         }
         break;
     }
@@ -1529,6 +2083,306 @@ inline bool write_engine_reg(cpueaxh_engine* engine, int reg, std::uint64_t valu
 
 inline bool read_engine_reg(cpueaxh_engine* engine, int reg, std::uint64_t& value) {
     return cpueaxh_reg_read(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool write_engine_reg32(cpueaxh_engine* engine, int reg, std::uint32_t value) {
+    return cpueaxh_reg_write(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool read_engine_reg32(cpueaxh_engine* engine, int reg, std::uint32_t& value) {
+    return cpueaxh_reg_read(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool write_engine_reg16(cpueaxh_engine* engine, int reg, std::uint16_t value) {
+    return cpueaxh_reg_write(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool read_engine_reg16(cpueaxh_engine* engine, int reg, std::uint16_t& value) {
+    return cpueaxh_reg_read(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool write_engine_xmm(cpueaxh_engine* engine, int reg, const cpueaxh_x86_xmm& value) {
+    return cpueaxh_reg_write(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool read_engine_xmm(cpueaxh_engine* engine, int reg, cpueaxh_x86_xmm& value) {
+    return cpueaxh_reg_read(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool write_engine_ymm(cpueaxh_engine* engine, int reg, const cpueaxh_x86_ymm& value) {
+    return cpueaxh_reg_write(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool read_engine_ymm(cpueaxh_engine* engine, int reg, cpueaxh_x86_ymm& value) {
+    return cpueaxh_reg_read(engine, reg, &value) == CPUEAXH_ERR_OK;
+}
+
+inline bool run_context_api_case(const std::string& name, std::uint64_t seed, Failure& failure) {
+    cpueaxh_engine* engine = nullptr;
+    cpueaxh_err err = cpueaxh_open(CPUEAXH_ARCH_X86, CPUEAXH_MODE_64, &engine);
+    if (err != CPUEAXH_ERR_OK) {
+        failure.case_name = name;
+        failure.detail = "cpueaxh_open failed";
+        return false;
+    }
+
+    bool ok = false;
+    do {
+        cpueaxh_x86_context initial = make_extended_context(seed);
+        initial.rip = seeded(seed, 0xC00);
+
+        err = cpueaxh_context_write(engine, &initial);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "cpueaxh_context_write failed";
+            break;
+        }
+
+        cpueaxh_x86_context roundtrip{};
+        err = cpueaxh_context_read(engine, &roundtrip);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "cpueaxh_context_read failed";
+            break;
+        }
+        if (!equal_context(initial, roundtrip)) {
+            failure.case_name = name;
+            failure.detail = "context roundtrip mismatch";
+            break;
+        }
+
+        cpueaxh_x86_ymm ymm_written = make_seeded_ymm(seed, 0xC10);
+        if (!write_engine_ymm(engine, CPUEAXH_X86_REG_YMM3, ymm_written)) {
+            failure.case_name = name;
+            failure.detail = "write ymm3 failed";
+            break;
+        }
+        cpueaxh_x86_ymm ymm_read{};
+        if (!read_engine_ymm(engine, CPUEAXH_X86_REG_YMM3, ymm_read) ||
+            !equal_xmm(ymm_read.lower, ymm_written.lower) ||
+            !equal_xmm(ymm_read.upper, ymm_written.upper)) {
+            failure.case_name = name;
+            failure.detail = "read ymm3 mismatch";
+            break;
+        }
+
+        cpueaxh_x86_xmm xmm_written = make_seeded_xmm(seed, 0xC20);
+        if (!write_engine_xmm(engine, CPUEAXH_X86_REG_XMM3, xmm_written)) {
+            failure.case_name = name;
+            failure.detail = "write xmm3 failed";
+            break;
+        }
+        cpueaxh_x86_xmm xmm_read{};
+        if (!read_engine_xmm(engine, CPUEAXH_X86_REG_XMM3, xmm_read) || !equal_xmm(xmm_read, xmm_written)) {
+            failure.case_name = name;
+            failure.detail = "read xmm3 mismatch";
+            break;
+        }
+        if (!read_engine_ymm(engine, CPUEAXH_X86_REG_YMM3, ymm_read) ||
+            !equal_xmm(ymm_read.lower, xmm_written) ||
+            !equal_xmm(ymm_read.upper, ymm_written.upper)) {
+            failure.case_name = name;
+            failure.detail = "ymm3/xmm3 coupling mismatch";
+            break;
+        }
+
+        const std::uint64_t mm0_written = seeded(seed, 0xC30);
+        if (!write_engine_reg(engine, CPUEAXH_X86_REG_MM0, mm0_written)) {
+            failure.case_name = name;
+            failure.detail = "write mm0 failed";
+            break;
+        }
+        std::uint64_t mm0_read = 0;
+        if (!read_engine_reg(engine, CPUEAXH_X86_REG_MM0, mm0_read) || mm0_read != mm0_written) {
+            failure.case_name = name;
+            failure.detail = "read mm0 mismatch";
+            break;
+        }
+
+        const std::uint32_t mxcsr_written = static_cast<std::uint32_t>(0x1F80u | (seeded(seed, 0xC31) & 0x1F3Fu));
+        if (!write_engine_reg32(engine, CPUEAXH_X86_REG_MXCSR, mxcsr_written)) {
+            failure.case_name = name;
+            failure.detail = "write mxcsr failed";
+            break;
+        }
+        std::uint32_t mxcsr_read = 0;
+        if (!read_engine_reg32(engine, CPUEAXH_X86_REG_MXCSR, mxcsr_read) || mxcsr_read != mxcsr_written) {
+            failure.case_name = name;
+            failure.detail = "read mxcsr mismatch";
+            break;
+        }
+
+        const std::uint16_t fs_selector = static_cast<std::uint16_t>(seeded(seed, 0xC40) & 0xFFF8u);
+        const std::uint64_t fs_base = seeded(seed, 0xC41);
+        const std::uint32_t fs_granularity = static_cast<std::uint32_t>(seeded(seed, 0xC44) & 1u);
+        if (!write_engine_reg16(engine, CPUEAXH_X86_REG_FS_SELECTOR, fs_selector) ||
+            !write_engine_reg(engine, CPUEAXH_X86_REG_FS_BASE, fs_base) ||
+            !write_engine_reg32(engine, CPUEAXH_X86_REG_FS_GRANULARITY, fs_granularity)) {
+            failure.case_name = name;
+            failure.detail = "write fs failed";
+            break;
+        }
+        std::uint16_t fs_selector_read = 0;
+        std::uint64_t fs_base_read = 0;
+        std::uint32_t fs_granularity_read = 0;
+        if (!read_engine_reg16(engine, CPUEAXH_X86_REG_FS_SELECTOR, fs_selector_read) ||
+            !read_engine_reg(engine, CPUEAXH_X86_REG_FS_BASE, fs_base_read) ||
+            !read_engine_reg32(engine, CPUEAXH_X86_REG_FS_GRANULARITY, fs_granularity_read) ||
+            fs_selector_read != fs_selector ||
+            fs_base_read != fs_base ||
+            fs_granularity_read != fs_granularity) {
+            failure.case_name = name;
+            failure.detail = "read fs mismatch";
+            break;
+        }
+
+        const std::uint16_t gs_selector = static_cast<std::uint16_t>(seeded(seed, 0xC42) & 0xFFF8u);
+        const std::uint64_t gs_base = seeded(seed, 0xC43);
+        const std::uint32_t gs_db = static_cast<std::uint32_t>(seeded(seed, 0xC45) & 1u);
+        const std::uint32_t gs_long_mode = static_cast<std::uint32_t>(seeded(seed, 0xC46) & 1u);
+        if (!write_engine_reg16(engine, CPUEAXH_X86_REG_GS_SELECTOR, gs_selector) ||
+            !write_engine_reg(engine, CPUEAXH_X86_REG_GS_BASE, gs_base) ||
+            !write_engine_reg32(engine, CPUEAXH_X86_REG_GS_DB, gs_db) ||
+            !write_engine_reg32(engine, CPUEAXH_X86_REG_GS_LONG_MODE, gs_long_mode)) {
+            failure.case_name = name;
+            failure.detail = "write gs failed";
+            break;
+        }
+        std::uint32_t gs_db_read = 0;
+        std::uint32_t gs_long_mode_read = 0;
+        if (!read_engine_reg32(engine, CPUEAXH_X86_REG_GS_DB, gs_db_read) ||
+            !read_engine_reg32(engine, CPUEAXH_X86_REG_GS_LONG_MODE, gs_long_mode_read) ||
+            gs_db_read != gs_db ||
+            gs_long_mode_read != gs_long_mode) {
+            failure.case_name = name;
+            failure.detail = "read gs mismatch";
+            break;
+        }
+
+        const std::uint32_t es_limit = narrow32(seeded(seed, 0xC47));
+        const std::uint32_t cs_type = static_cast<std::uint32_t>(seeded(seed, 0xC48) & 0x1Fu);
+        const std::uint32_t ss_dpl = static_cast<std::uint32_t>(seeded(seed, 0xC49) & 0x3u);
+        const std::uint32_t ds_present = static_cast<std::uint32_t>(seeded(seed, 0xC4A) & 1u);
+        if (!write_engine_reg32(engine, CPUEAXH_X86_REG_ES_LIMIT, es_limit) ||
+            !write_engine_reg32(engine, CPUEAXH_X86_REG_CS_TYPE, cs_type) ||
+            !write_engine_reg32(engine, CPUEAXH_X86_REG_SS_DPL, ss_dpl) ||
+            !write_engine_reg32(engine, CPUEAXH_X86_REG_DS_PRESENT, ds_present)) {
+            failure.case_name = name;
+            failure.detail = "write segment descriptor fields failed";
+            break;
+        }
+        std::uint32_t es_limit_read = 0;
+        std::uint32_t cs_type_read = 0;
+        std::uint32_t ss_dpl_read = 0;
+        std::uint32_t ds_present_read = 0;
+        if (!read_engine_reg32(engine, CPUEAXH_X86_REG_ES_LIMIT, es_limit_read) ||
+            !read_engine_reg32(engine, CPUEAXH_X86_REG_CS_TYPE, cs_type_read) ||
+            !read_engine_reg32(engine, CPUEAXH_X86_REG_SS_DPL, ss_dpl_read) ||
+            !read_engine_reg32(engine, CPUEAXH_X86_REG_DS_PRESENT, ds_present_read) ||
+            es_limit_read != es_limit ||
+            cs_type_read != cs_type ||
+            ss_dpl_read != ss_dpl ||
+            ds_present_read != ds_present) {
+            failure.case_name = name;
+            failure.detail = "read segment descriptor fields mismatch";
+            break;
+        }
+
+        const std::uint64_t gdtr_base = seeded(seed, 0xC50);
+        const std::uint16_t gdtr_limit = static_cast<std::uint16_t>(seeded(seed, 0xC51) & 0xFFFFu);
+        const std::uint64_t ldtr_base = seeded(seed, 0xC52);
+        const std::uint16_t ldtr_limit = static_cast<std::uint16_t>(seeded(seed, 0xC53) & 0xFFFFu);
+        if (!write_engine_reg(engine, CPUEAXH_X86_REG_GDTR_BASE, gdtr_base) ||
+            !write_engine_reg16(engine, CPUEAXH_X86_REG_GDTR_LIMIT, gdtr_limit) ||
+            !write_engine_reg(engine, CPUEAXH_X86_REG_LDTR_BASE, ldtr_base) ||
+            !write_engine_reg16(engine, CPUEAXH_X86_REG_LDTR_LIMIT, ldtr_limit)) {
+            failure.case_name = name;
+            failure.detail = "write descriptor tables failed";
+            break;
+        }
+
+        const std::uint32_t exception_code = CPUEAXH_EXCEPTION_GP;
+        const std::uint32_t exception_error = narrow32(seeded(seed, 0xC60));
+        if (!write_engine_reg32(engine, CPUEAXH_X86_REG_EXCEPTION_CODE, exception_code) ||
+            !write_engine_reg32(engine, CPUEAXH_X86_REG_EXCEPTION_ERROR_CODE, exception_error)) {
+            failure.case_name = name;
+            failure.detail = "write exception state failed";
+            break;
+        }
+
+        const std::uint64_t cr1_written = seeded(seed, 0xC70);
+        const std::uint64_t cr15_written = seeded(seed, 0xC71);
+        if (!write_engine_reg(engine, CPUEAXH_X86_REG_CR1, cr1_written) ||
+            !write_engine_reg(engine, CPUEAXH_X86_REG_CR15, cr15_written)) {
+            failure.case_name = name;
+            failure.detail = "write extra control regs failed";
+            break;
+        }
+        std::uint64_t cr1_read = 0;
+        std::uint64_t cr15_read = 0;
+        if (!read_engine_reg(engine, CPUEAXH_X86_REG_CR1, cr1_read) ||
+            !read_engine_reg(engine, CPUEAXH_X86_REG_CR15, cr15_read) ||
+            cr1_read != cr1_written ||
+            cr15_read != cr15_written) {
+            failure.case_name = name;
+            failure.detail = "read extra control regs mismatch";
+            break;
+        }
+
+        const std::uint32_t processor_id = narrow32(seeded(seed, 0xC72));
+        if (!write_engine_reg32(engine, CPUEAXH_X86_REG_PROCESSOR_ID, processor_id)) {
+            failure.case_name = name;
+            failure.detail = "write processor_id failed";
+            break;
+        }
+        std::uint32_t processor_id_read = 0;
+        if (!read_engine_reg32(engine, CPUEAXH_X86_REG_PROCESSOR_ID, processor_id_read) || processor_id_read != processor_id) {
+            failure.case_name = name;
+            failure.detail = "read processor_id mismatch";
+            break;
+        }
+
+        cpueaxh_x86_context final_context{};
+        err = cpueaxh_context_read(engine, &final_context);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "final context read failed";
+            break;
+        }
+        if (!equal_xmm(final_context.xmm[3], xmm_written) ||
+            !equal_xmm(final_context.ymm_upper[3], ymm_written.upper) ||
+            final_context.mm[0] != mm0_written ||
+            final_context.mxcsr != mxcsr_written ||
+            final_context.es.descriptor.limit != es_limit ||
+            final_context.cs.descriptor.type != cs_type ||
+            final_context.ss.descriptor.dpl != ss_dpl ||
+            final_context.ds.descriptor.present != ds_present ||
+            final_context.fs.selector != fs_selector ||
+            final_context.fs.descriptor.base != fs_base ||
+            final_context.fs.descriptor.granularity != fs_granularity ||
+            final_context.gs.selector != gs_selector ||
+            final_context.gs.descriptor.base != gs_base ||
+            final_context.gs.descriptor.db != gs_db ||
+            final_context.gs.descriptor.long_mode != gs_long_mode ||
+            final_context.gdtr_base != gdtr_base ||
+            final_context.gdtr_limit != gdtr_limit ||
+            final_context.ldtr_base != ldtr_base ||
+            final_context.ldtr_limit != ldtr_limit ||
+            final_context.control_regs[1] != cr1_written ||
+            final_context.control_regs[15] != cr15_written ||
+            final_context.code_exception != exception_code ||
+            final_context.error_code_exception != exception_error ||
+            final_context.processor_id != processor_id) {
+            failure.case_name = name;
+            failure.detail = "final context state mismatch";
+            break;
+        }
+
+        ok = true;
+    } while (false);
+
+    cpueaxh_close(engine);
+    return ok;
 }
 
 inline bool initialize_manual_engine(cpueaxh_engine* engine, const std::vector<std::uint8_t>& code, const cpueaxh_x86_context& initial, std::uint64_t guest_rsp, Failure& failure, const std::string& name) {
@@ -1821,9 +2675,13 @@ inline bool run_manual_exception_case_public(
     return ok;
 }
 
+inline bool emit_host_mov_reg_imm64(std::vector<std::uint8_t>& code, std::uint8_t reg_low3, std::uint64_t imm);
+inline bool run_host_write_isolation_case(const std::string& name, std::uint64_t seed, Failure& failure);
+inline bool run_host_write_isolation_groups_case(const std::string& name, std::uint64_t seed, Failure& failure);
+
 inline std::uint64_t manual_special_case_count(const HostFeatures& features) {
     (void)features;
-    return kSeedCount * 6ull + kExceptionSeedCount * 8ull;
+    return kSeedCount * 6ull + kExceptionSeedCount * 8ull + kHostIsolationSeedCount + kHostIsolationGroupSeedCount + kContextApiSeedCount;
 }
 
 inline bool run_manual_special_tests(const HostFeatures& features, std::uint64_t& executed, std::uint64_t total) {
@@ -1893,7 +2751,390 @@ inline bool run_manual_special_tests(const HostFeatures& features, std::uint64_t
         if (!tick(run_manual_exception_case("rdpid_66_ud:" + std::to_string(seed6), invalid_rdpid_with_66, seed6, CPUEAXH_EXCEPTION_UD, failure), failure)) return false;
     }
 
+    for (std::uint64_t seed_index = 0; seed_index < kHostIsolationSeedCount; ++seed_index) {
+        Failure failure;
+        const std::uint64_t seed7 = seeded(seed_index, 0xE101);
+        if (!tick(run_host_write_isolation_case("host_write_isolation:" + std::to_string(seed7), seed7, failure), failure)) return false;
+    }
+
+    for (std::uint64_t seed_index = 0; seed_index < kHostIsolationGroupSeedCount; ++seed_index) {
+        Failure failure;
+        const std::uint64_t seed8 = seeded(seed_index, 0xE201);
+        if (!tick(run_host_write_isolation_groups_case("host_write_isolation_groups:" + std::to_string(seed8), seed8, failure), failure)) return false;
+    }
+
+    for (std::uint64_t seed_index = 0; seed_index < kContextApiSeedCount; ++seed_index) {
+        Failure failure;
+        const std::uint64_t seed9 = seeded(seed_index, 0xE301);
+        if (!tick(run_context_api_case("context_api:" + std::to_string(seed9), seed9, failure), failure)) return false;
+    }
+
     return true;
+}
+
+inline bool emit_host_mov_reg_imm64(std::vector<std::uint8_t>& code, std::uint8_t reg_low3, std::uint64_t imm) {
+    if (reg_low3 > 7) {
+        return false;
+    }
+    code.push_back(0x48);
+    code.push_back(static_cast<std::uint8_t>(0xB8u + reg_low3));
+    for (int shift = 0; shift < 64; shift += 8) {
+        code.push_back(static_cast<std::uint8_t>((imm >> shift) & 0xFFu));
+    }
+    return true;
+}
+
+inline bool run_host_write_isolation_case(const std::string& name, std::uint64_t seed, Failure& failure) {
+    cpueaxh_engine* engine = nullptr;
+    std::uint8_t* code_page = nullptr;
+    std::uint8_t* stack_page = nullptr;
+    std::uint8_t* data_pages = nullptr;
+
+    cpueaxh_err err = cpueaxh_open(CPUEAXH_ARCH_X86, CPUEAXH_MODE_64, &engine);
+    if (err != CPUEAXH_ERR_OK) {
+        failure.case_name = name;
+        failure.detail = "cpueaxh_open failed";
+        return false;
+    }
+
+    bool ok = false;
+    do {
+        code_page = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, kCodePageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+        stack_page = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, kStackSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+        data_pages = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, kCodePageSize * 3, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+        if (!code_page || !stack_page || !data_pages) {
+            failure.case_name = name;
+            failure.detail = "VirtualAlloc failed";
+            break;
+        }
+
+        std::memset(code_page, 0xCC, kCodePageSize);
+        std::memset(stack_page, 0, kStackSize);
+        std::memset(data_pages, 0, kCodePageSize * 3);
+
+        std::uint8_t* isolated_page = data_pages;
+        std::uint8_t* exempt_page0 = data_pages + kCodePageSize;
+        std::uint8_t* exempt_page1 = data_pages + kCodePageSize * 2;
+
+        const std::uint8_t isolated_initial = narrow8(seeded(seed, 0xF001));
+        const std::uint8_t exempt_initial0 = narrow8(seeded(seed, 0xF002));
+        const std::uint8_t exempt_initial1 = narrow8(seeded(seed, 0xF003));
+        const std::uint8_t isolated_write = narrow8(seeded(seed, 0xF101)) | 1u;
+        const std::uint8_t exempt_write0 = narrow8(seeded(seed, 0xF102)) | 1u;
+        const std::uint8_t exempt_write1 = narrow8(seeded(seed, 0xF103)) | 1u;
+
+        isolated_page[0] = isolated_initial;
+        exempt_page0[0] = exempt_initial0;
+        exempt_page1[0] = exempt_initial1;
+
+        std::vector<std::uint8_t> code;
+        if (!emit_host_mov_reg_imm64(code, 3, reinterpret_cast<std::uint64_t>(isolated_page)) ||
+            !emit_host_mov_reg_imm64(code, 1, reinterpret_cast<std::uint64_t>(exempt_page0)) ||
+            !emit_host_mov_reg_imm64(code, 2, reinterpret_cast<std::uint64_t>(exempt_page1))) {
+            failure.case_name = name;
+            failure.detail = "code emit failed";
+            break;
+        }
+
+        code.push_back(0xC6); code.push_back(0x03); code.push_back(isolated_write);
+        code.push_back(0x31); code.push_back(0xC0);
+        code.push_back(0x8A); code.push_back(0x03);
+        code.push_back(0xC6); code.push_back(0x01); code.push_back(exempt_write0);
+        code.push_back(0xC6); code.push_back(0x02); code.push_back(exempt_write1);
+        code.push_back(0xC3);
+
+        std::memcpy(code_page, code.data(), code.size());
+
+        err = cpueaxh_set_memory_mode(engine, CPUEAXH_MEMORY_MODE_HOST);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "cpueaxh_set_memory_mode(host) failed";
+            break;
+        }
+        err = cpueaxh_host_write_isolation_set(engine, 1);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "cpueaxh_host_write_isolation_set failed";
+            break;
+        }
+        err = cpueaxh_host_write_isolation_exempt_add(engine, reinterpret_cast<std::uint64_t>(exempt_page0), kCodePageSize);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "cpueaxh_host_write_isolation_exempt_add 0 failed";
+            break;
+        }
+        err = cpueaxh_host_write_isolation_exempt_add(engine, reinterpret_cast<std::uint64_t>(exempt_page1), kCodePageSize);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "cpueaxh_host_write_isolation_exempt_add 1 failed";
+            break;
+        }
+
+        std::uint64_t rsp = reinterpret_cast<std::uint64_t>(stack_page) + kStackSize - 0x80 - sizeof(std::uint64_t);
+        *reinterpret_cast<std::uint64_t*>(rsp) = 0;
+        std::uint64_t rbp = rsp;
+        std::uint64_t rip = reinterpret_cast<std::uint64_t>(code_page);
+        std::uint64_t rax = 0;
+        cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RSP, &rsp);
+        cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RBP, &rbp);
+        cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RIP, &rip);
+        cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RAX, &rax);
+
+        err = cpueaxh_emu_start_function(engine, 0, 0, 1024);
+        if (err != CPUEAXH_ERR_OK || cpueaxh_code_exception(engine) != CPUEAXH_EXCEPTION_NONE) {
+            failure.case_name = name;
+            failure.detail = "host isolation execution failed";
+            break;
+        }
+
+        if (isolated_page[0] != isolated_initial) {
+            failure.case_name = name;
+            failure.detail = "isolated host memory changed unexpectedly";
+            break;
+        }
+        if (exempt_page0[0] != exempt_write0 || exempt_page1[0] != exempt_write1) {
+            failure.case_name = name;
+            failure.detail = "exempt host memory did not update";
+            break;
+        }
+
+        std::uint8_t isolated_observed = 0;
+        err = cpueaxh_mem_read(engine, reinterpret_cast<std::uint64_t>(isolated_page), &isolated_observed, sizeof(isolated_observed));
+        if (err != CPUEAXH_ERR_OK || isolated_observed != isolated_write) {
+            failure.case_name = name;
+            failure.detail = "isolated readback mismatch";
+            break;
+        }
+
+        std::uint8_t exempt_observed0 = 0;
+        std::uint8_t exempt_observed1 = 0;
+        err = cpueaxh_mem_read(engine, reinterpret_cast<std::uint64_t>(exempt_page0), &exempt_observed0, sizeof(exempt_observed0));
+        if (err != CPUEAXH_ERR_OK || exempt_observed0 != exempt_write0) {
+            failure.case_name = name;
+            failure.detail = "exempt readback 0 mismatch";
+            break;
+        }
+        err = cpueaxh_mem_read(engine, reinterpret_cast<std::uint64_t>(exempt_page1), &exempt_observed1, sizeof(exempt_observed1));
+        if (err != CPUEAXH_ERR_OK || exempt_observed1 != exempt_write1) {
+            failure.case_name = name;
+            failure.detail = "exempt readback 1 mismatch";
+            break;
+        }
+
+        std::uint64_t observed_rax = 0;
+        if (!read_engine_reg(engine, CPUEAXH_X86_REG_RAX, observed_rax) || static_cast<std::uint8_t>(observed_rax & 0xFFu) != isolated_write) {
+            failure.case_name = name;
+            failure.detail = "write-after-read register mismatch";
+            break;
+        }
+
+        ok = true;
+    } while (false);
+
+    if (data_pages) {
+        ::VirtualFree(data_pages, 0, MEM_RELEASE);
+    }
+    if (stack_page) {
+        ::VirtualFree(stack_page, 0, MEM_RELEASE);
+    }
+    if (code_page) {
+        ::VirtualFree(code_page, 0, MEM_RELEASE);
+    }
+    if (engine) {
+        cpueaxh_close(engine);
+    }
+    return ok;
+}
+
+inline bool run_host_write_isolation_groups_case(const std::string& name, std::uint64_t seed, Failure& failure) {
+    cpueaxh_engine* engine = nullptr;
+    std::uint8_t* code_page = nullptr;
+    std::uint8_t* stack_page = nullptr;
+    std::uint8_t* data_page = nullptr;
+
+    auto run_program = [&](std::uint8_t write_value, std::uint8_t expected_value) -> bool {
+        std::vector<std::uint8_t> code;
+        if (!emit_host_mov_reg_imm64(code, 3, reinterpret_cast<std::uint64_t>(data_page))) {
+            failure.case_name = name;
+            failure.detail = "group code emit failed";
+            return false;
+        }
+        code.push_back(0xC6); code.push_back(0x03); code.push_back(write_value);
+        code.push_back(0x31); code.push_back(0xC0);
+        code.push_back(0x8A); code.push_back(0x03);
+        code.push_back(0xC3);
+        std::memset(code_page, 0xCC, kCodePageSize);
+        std::memcpy(code_page, code.data(), code.size());
+
+        std::uint64_t rsp = reinterpret_cast<std::uint64_t>(stack_page) + kStackSize - 0x80 - sizeof(std::uint64_t);
+        *reinterpret_cast<std::uint64_t*>(rsp) = 0;
+        std::uint64_t rbp = rsp;
+        std::uint64_t rip = reinterpret_cast<std::uint64_t>(code_page);
+        std::uint64_t rax = 0;
+        if (cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RSP, &rsp) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RBP, &rbp) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RIP, &rip) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RAX, &rax) != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group register initialization failed";
+            return false;
+        }
+
+        cpueaxh_err err = cpueaxh_emu_start_function(engine, 0, 0, 1024);
+        if (err != CPUEAXH_ERR_OK || cpueaxh_code_exception(engine) != CPUEAXH_EXCEPTION_NONE) {
+            failure.case_name = name;
+            failure.detail = "group execution failed";
+            return false;
+        }
+
+        std::uint64_t observed_rax = 0;
+        if (!read_engine_reg(engine, CPUEAXH_X86_REG_RAX, observed_rax) || static_cast<std::uint8_t>(observed_rax & 0xFFu) != expected_value) {
+            failure.case_name = name;
+            failure.detail = "group register result mismatch";
+            return false;
+        }
+        return true;
+    };
+
+    cpueaxh_err err = cpueaxh_open(CPUEAXH_ARCH_X86, CPUEAXH_MODE_64, &engine);
+    if (err != CPUEAXH_ERR_OK) {
+        failure.case_name = name;
+        failure.detail = "cpueaxh_open failed";
+        return false;
+    }
+
+    bool ok = false;
+    do {
+        code_page = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, kCodePageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+        stack_page = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, kStackSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+        data_page = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, kCodePageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+        if (!code_page || !stack_page || !data_page) {
+            failure.case_name = name;
+            failure.detail = "group VirtualAlloc failed";
+            break;
+        }
+
+        std::memset(code_page, 0xCC, kCodePageSize);
+        std::memset(stack_page, 0, kStackSize);
+        std::memset(data_page, 0, kCodePageSize);
+
+        const std::uint8_t initial = narrow8(seeded(seed, 0x6201));
+        const std::uint8_t value0 = narrow8(seeded(seed, 0x6202)) | 1u;
+        const std::uint8_t value1 = narrow8(seeded(seed, 0x6203)) | 1u;
+        data_page[0] = initial;
+
+        err = cpueaxh_set_memory_mode(engine, CPUEAXH_MEMORY_MODE_HOST);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group set_memory_mode failed";
+            break;
+        }
+        err = cpueaxh_host_write_isolation_set(engine, 1);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group isolation enable failed";
+            break;
+        }
+
+        cpueaxh_write_isolation_handle group0 = 0;
+        cpueaxh_write_isolation_handle group1 = 0;
+        err = cpueaxh_host_write_isolation_group_create(engine, &group0);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group create 0 failed";
+            break;
+        }
+        err = cpueaxh_host_write_isolation_group_create(engine, &group1);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group create 1 failed";
+            break;
+        }
+
+        if (cpueaxh_host_write_isolation_group_select(engine, group0) != CPUEAXH_ERR_OK || !run_program(value0, value0)) {
+            break;
+        }
+
+        if (data_page[0] != initial) {
+            failure.case_name = name;
+            failure.detail = "group 0 changed host memory unexpectedly";
+            break;
+        }
+
+        std::uint8_t observed = 0;
+        if (cpueaxh_mem_read(engine, reinterpret_cast<std::uint64_t>(data_page), &observed, sizeof(observed)) != CPUEAXH_ERR_OK || observed != value0) {
+            failure.case_name = name;
+            failure.detail = "group 0 readback mismatch";
+            break;
+        }
+
+        if (cpueaxh_host_write_isolation_group_select(engine, group1) != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group select 1 failed";
+            break;
+        }
+        if (cpueaxh_mem_read(engine, reinterpret_cast<std::uint64_t>(data_page), &observed, sizeof(observed)) != CPUEAXH_ERR_OK || observed != initial) {
+            failure.case_name = name;
+            failure.detail = "group 1 initial view mismatch";
+            break;
+        }
+        if (!run_program(value1, value1)) {
+            break;
+        }
+        if (cpueaxh_mem_read(engine, reinterpret_cast<std::uint64_t>(data_page), &observed, sizeof(observed)) != CPUEAXH_ERR_OK || observed != value1) {
+            failure.case_name = name;
+            failure.detail = "group 1 readback mismatch";
+            break;
+        }
+
+        if (cpueaxh_host_write_isolation_group_select(engine, group0) != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group reselect 0 failed";
+            break;
+        }
+        if (cpueaxh_mem_read(engine, reinterpret_cast<std::uint64_t>(data_page), &observed, sizeof(observed)) != CPUEAXH_ERR_OK || observed != value0) {
+            failure.case_name = name;
+            failure.detail = "group 0 persisted view mismatch";
+            break;
+        }
+
+        if (cpueaxh_host_write_isolation_group_delete(engine, group0) != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group delete 0 failed";
+            break;
+        }
+        if (cpueaxh_host_write_isolation_group_select(engine, group1) != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "group select surviving group failed";
+            break;
+        }
+        if (cpueaxh_mem_read(engine, reinterpret_cast<std::uint64_t>(data_page), &observed, sizeof(observed)) != CPUEAXH_ERR_OK || observed != value1) {
+            failure.case_name = name;
+            failure.detail = "surviving group view mismatch";
+            break;
+        }
+        if (data_page[0] != initial) {
+            failure.case_name = name;
+            failure.detail = "group delete changed host memory unexpectedly";
+            break;
+        }
+
+        ok = true;
+    } while (false);
+
+    if (data_page) {
+        ::VirtualFree(data_page, 0, MEM_RELEASE);
+    }
+    if (stack_page) {
+        ::VirtualFree(stack_page, 0, MEM_RELEASE);
+    }
+    if (code_page) {
+        ::VirtualFree(code_page, 0, MEM_RELEASE);
+    }
+    if (engine) {
+        cpueaxh_close(engine);
+    }
+    return ok;
 }
 
 class Harness {

@@ -20,6 +20,7 @@ typedef struct cpueaxh_engine cpueaxh_engine;
 typedef uint64_t cpueaxh_hook;
 typedef uint64_t cpueaxh_mem_patch_handle;
 typedef uint64_t cpueaxh_escape_handle;
+typedef uint64_t cpueaxh_write_isolation_handle;
 typedef uint32_t cpueaxh_escape_insn_id;
 typedef cpueaxh_escape_insn_id cpueaxh_insn_id;
 typedef void (*cpueaxh_cb_hookcode_t)(cpueaxh_engine* engine, uint64_t address, void* user_data);
@@ -31,6 +32,11 @@ typedef struct cpueaxh_x86_xmm {
 	uint64_t low;
 	uint64_t high;
 } cpueaxh_x86_xmm;
+
+typedef struct cpueaxh_x86_ymm {
+	cpueaxh_x86_xmm lower;
+	cpueaxh_x86_xmm upper;
+} cpueaxh_x86_ymm;
 
 typedef struct cpueaxh_x86_segment_descriptor {
 	uint64_t base;
@@ -76,6 +82,8 @@ typedef struct cpueaxh_x86_context {
 	uint32_t error_code_exception;
 	uint64_t internal_bridge_block;
 	uint64_t control_regs[16];
+	uint32_t processor_id;
+	uint32_t reserved4;
 } cpueaxh_x86_context;
 
 typedef struct cpueaxh_mem_region {
@@ -182,6 +190,117 @@ typedef cpueaxh_err (*cpueaxh_cb_escape_t)(cpueaxh_engine* engine, cpueaxh_x86_c
 #define CPUEAXH_X86_REG_CR3 23
 #define CPUEAXH_X86_REG_CR4 24
 #define CPUEAXH_X86_REG_CR8 25
+#define CPUEAXH_X86_REG_XMM0 26
+#define CPUEAXH_X86_REG_XMM1 27
+#define CPUEAXH_X86_REG_XMM2 28
+#define CPUEAXH_X86_REG_XMM3 29
+#define CPUEAXH_X86_REG_XMM4 30
+#define CPUEAXH_X86_REG_XMM5 31
+#define CPUEAXH_X86_REG_XMM6 32
+#define CPUEAXH_X86_REG_XMM7 33
+#define CPUEAXH_X86_REG_XMM8 34
+#define CPUEAXH_X86_REG_XMM9 35
+#define CPUEAXH_X86_REG_XMM10 36
+#define CPUEAXH_X86_REG_XMM11 37
+#define CPUEAXH_X86_REG_XMM12 38
+#define CPUEAXH_X86_REG_XMM13 39
+#define CPUEAXH_X86_REG_XMM14 40
+#define CPUEAXH_X86_REG_XMM15 41
+#define CPUEAXH_X86_REG_YMM0 42
+#define CPUEAXH_X86_REG_YMM1 43
+#define CPUEAXH_X86_REG_YMM2 44
+#define CPUEAXH_X86_REG_YMM3 45
+#define CPUEAXH_X86_REG_YMM4 46
+#define CPUEAXH_X86_REG_YMM5 47
+#define CPUEAXH_X86_REG_YMM6 48
+#define CPUEAXH_X86_REG_YMM7 49
+#define CPUEAXH_X86_REG_YMM8 50
+#define CPUEAXH_X86_REG_YMM9 51
+#define CPUEAXH_X86_REG_YMM10 52
+#define CPUEAXH_X86_REG_YMM11 53
+#define CPUEAXH_X86_REG_YMM12 54
+#define CPUEAXH_X86_REG_YMM13 55
+#define CPUEAXH_X86_REG_YMM14 56
+#define CPUEAXH_X86_REG_YMM15 57
+#define CPUEAXH_X86_REG_MM0 58
+#define CPUEAXH_X86_REG_MM1 59
+#define CPUEAXH_X86_REG_MM2 60
+#define CPUEAXH_X86_REG_MM3 61
+#define CPUEAXH_X86_REG_MM4 62
+#define CPUEAXH_X86_REG_MM5 63
+#define CPUEAXH_X86_REG_MM6 64
+#define CPUEAXH_X86_REG_MM7 65
+#define CPUEAXH_X86_REG_MXCSR 66
+#define CPUEAXH_X86_REG_ES_SELECTOR 67
+#define CPUEAXH_X86_REG_CS_SELECTOR 68
+#define CPUEAXH_X86_REG_SS_SELECTOR 69
+#define CPUEAXH_X86_REG_DS_SELECTOR 70
+#define CPUEAXH_X86_REG_FS_SELECTOR 71
+#define CPUEAXH_X86_REG_ES_BASE 72
+#define CPUEAXH_X86_REG_CS_BASE 73
+#define CPUEAXH_X86_REG_SS_BASE 74
+#define CPUEAXH_X86_REG_DS_BASE 75
+#define CPUEAXH_X86_REG_FS_BASE 76
+#define CPUEAXH_X86_REG_GDTR_BASE 77
+#define CPUEAXH_X86_REG_GDTR_LIMIT 78
+#define CPUEAXH_X86_REG_LDTR_BASE 79
+#define CPUEAXH_X86_REG_LDTR_LIMIT 80
+#define CPUEAXH_X86_REG_EXCEPTION_CODE 81
+#define CPUEAXH_X86_REG_EXCEPTION_ERROR_CODE 82
+#define CPUEAXH_X86_REG_CR1 83
+#define CPUEAXH_X86_REG_CR5 84
+#define CPUEAXH_X86_REG_CR6 85
+#define CPUEAXH_X86_REG_CR7 86
+#define CPUEAXH_X86_REG_CR9 87
+#define CPUEAXH_X86_REG_CR10 88
+#define CPUEAXH_X86_REG_CR11 89
+#define CPUEAXH_X86_REG_CR12 90
+#define CPUEAXH_X86_REG_CR13 91
+#define CPUEAXH_X86_REG_CR14 92
+#define CPUEAXH_X86_REG_CR15 93
+#define CPUEAXH_X86_REG_PROCESSOR_ID 94
+#define CPUEAXH_X86_REG_ES_LIMIT 95
+#define CPUEAXH_X86_REG_ES_TYPE 96
+#define CPUEAXH_X86_REG_ES_DPL 97
+#define CPUEAXH_X86_REG_ES_PRESENT 98
+#define CPUEAXH_X86_REG_ES_GRANULARITY 99
+#define CPUEAXH_X86_REG_ES_DB 100
+#define CPUEAXH_X86_REG_ES_LONG_MODE 101
+#define CPUEAXH_X86_REG_CS_LIMIT 102
+#define CPUEAXH_X86_REG_CS_TYPE 103
+#define CPUEAXH_X86_REG_CS_DPL 104
+#define CPUEAXH_X86_REG_CS_PRESENT 105
+#define CPUEAXH_X86_REG_CS_GRANULARITY 106
+#define CPUEAXH_X86_REG_CS_DB 107
+#define CPUEAXH_X86_REG_CS_LONG_MODE 108
+#define CPUEAXH_X86_REG_SS_LIMIT 109
+#define CPUEAXH_X86_REG_SS_TYPE 110
+#define CPUEAXH_X86_REG_SS_DPL 111
+#define CPUEAXH_X86_REG_SS_PRESENT 112
+#define CPUEAXH_X86_REG_SS_GRANULARITY 113
+#define CPUEAXH_X86_REG_SS_DB 114
+#define CPUEAXH_X86_REG_SS_LONG_MODE 115
+#define CPUEAXH_X86_REG_DS_LIMIT 116
+#define CPUEAXH_X86_REG_DS_TYPE 117
+#define CPUEAXH_X86_REG_DS_DPL 118
+#define CPUEAXH_X86_REG_DS_PRESENT 119
+#define CPUEAXH_X86_REG_DS_GRANULARITY 120
+#define CPUEAXH_X86_REG_DS_DB 121
+#define CPUEAXH_X86_REG_DS_LONG_MODE 122
+#define CPUEAXH_X86_REG_FS_LIMIT 123
+#define CPUEAXH_X86_REG_FS_TYPE 124
+#define CPUEAXH_X86_REG_FS_DPL 125
+#define CPUEAXH_X86_REG_FS_PRESENT 126
+#define CPUEAXH_X86_REG_FS_GRANULARITY 127
+#define CPUEAXH_X86_REG_FS_DB 128
+#define CPUEAXH_X86_REG_FS_LONG_MODE 129
+#define CPUEAXH_X86_REG_GS_LIMIT 130
+#define CPUEAXH_X86_REG_GS_TYPE 131
+#define CPUEAXH_X86_REG_GS_DPL 132
+#define CPUEAXH_X86_REG_GS_PRESENT 133
+#define CPUEAXH_X86_REG_GS_GRANULARITY 134
+#define CPUEAXH_X86_REG_GS_DB 135
+#define CPUEAXH_X86_REG_GS_LONG_MODE 136
 
 #ifdef __cplusplus
 extern "C" {
@@ -191,6 +310,12 @@ cpueaxh_err cpueaxh_open(uint32_t arch, uint32_t mode, cpueaxh_engine** out_engi
 void cpueaxh_close(cpueaxh_engine* engine);
 
 cpueaxh_err cpueaxh_set_memory_mode(cpueaxh_engine* engine, uint32_t memory_mode);
+cpueaxh_err cpueaxh_host_write_isolation_set(cpueaxh_engine* engine, uint32_t enabled);
+cpueaxh_err cpueaxh_host_write_isolation_group_create(cpueaxh_engine* engine, cpueaxh_write_isolation_handle* out_group);
+cpueaxh_err cpueaxh_host_write_isolation_group_select(cpueaxh_engine* engine, cpueaxh_write_isolation_handle group);
+cpueaxh_err cpueaxh_host_write_isolation_group_delete(cpueaxh_engine* engine, cpueaxh_write_isolation_handle group);
+cpueaxh_err cpueaxh_host_write_isolation_exempt_add(cpueaxh_engine* engine, uint64_t address, size_t size);
+cpueaxh_err cpueaxh_host_write_isolation_exempt_del(cpueaxh_engine* engine, uint64_t address, size_t size);
 
 cpueaxh_err cpueaxh_mem_map(cpueaxh_engine* engine, uint64_t address, size_t size, uint32_t perms);
 cpueaxh_err cpueaxh_mem_map_ptr(cpueaxh_engine* engine, uint64_t address, size_t size, uint32_t perms, void* host_ptr);
@@ -205,6 +330,8 @@ cpueaxh_err cpueaxh_mem_patch_del(cpueaxh_engine* engine, cpueaxh_mem_patch_hand
 
 cpueaxh_err cpueaxh_reg_write(cpueaxh_engine* engine, int regid, const void* value);
 cpueaxh_err cpueaxh_reg_read(cpueaxh_engine* engine, int regid, void* value);
+cpueaxh_err cpueaxh_context_write(cpueaxh_engine* engine, const cpueaxh_x86_context* context);
+cpueaxh_err cpueaxh_context_read(const cpueaxh_engine* engine, cpueaxh_x86_context* context);
 cpueaxh_err cpueaxh_set_processor_id(cpueaxh_engine* engine, uint32_t processor_id);
 
 cpueaxh_err cpueaxh_emu_start(cpueaxh_engine* engine, uint64_t begin, uint64_t until, uint64_t timeout, size_t count);

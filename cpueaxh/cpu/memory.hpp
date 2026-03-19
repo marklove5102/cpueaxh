@@ -59,7 +59,7 @@ inline MM_ACCESS_STATUS cpu_resolve_memory_access(CPU_CONTEXT* ctx, uint64_t add
 
     for (int attempt = 0; attempt < 4; attempt++) {
         uint32_t cpu_attrs = 0;
-        MM_ACCESS_STATUS status = mm_get_ptr_checked(ctx->mem_mgr, address, access, out_ptr, &cpu_attrs);
+        MM_ACCESS_STATUS status = mm_get_ptr_checked_ex(ctx->mem_mgr, address, access, out_ptr, &cpu_attrs, access == MM_PROT_WRITE);
         if (status == MM_ACCESS_UNMAPPED) {
             if (out_ptr) {
                 *out_ptr = NULL;
@@ -136,26 +136,36 @@ inline uint8_t* cpu_get_contiguous_ptr(CPU_CONTEXT* ctx, uint64_t address, size_
         return NULL;
     }
 
-    uint8_t* base_ptr = NULL;
-    if (cpu_resolve_memory_access(ctx, address, access, &base_ptr, address, size, value) != MM_ACCESS_OK) {
-        return NULL;
-    }
-
-    for (size_t offset = 1; offset < size; offset++) {
-        uint8_t* next_ptr = NULL;
-        if (cpu_resolve_memory_access(ctx, address + offset, access, &next_ptr, address, size, value) != MM_ACCESS_OK) {
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        uint8_t* base_ptr = NULL;
+        uint32_t cpu_attrs = 0;
+        MM_ACCESS_STATUS status = mm_get_contiguous_ptr_checked(ctx->mem_mgr, address, (uint64_t)size, access, &base_ptr, &cpu_attrs, access == MM_PROT_WRITE);
+        if (status == MM_ACCESS_UNMAPPED) {
+            if (cpu_try_handle_invalid_memory_access(ctx, address, access, false, size, value)) {
+                continue;
+            }
+            cpu_raise_page_fault(ctx, access, false);
             return NULL;
         }
-        if (next_ptr != base_ptr + offset) {
+        if (status == MM_ACCESS_PROT) {
             if (cpu_try_handle_invalid_memory_access(ctx, address, access, true, size, value)) {
-                return cpu_get_contiguous_ptr(ctx, address, size, access, value);
+                continue;
             }
             cpu_raise_page_fault(ctx, access, true);
             return NULL;
         }
+        if (ctx->cpl == 3 && (cpu_attrs & MM_CPU_ATTR_USER) == 0) {
+            if (cpu_try_handle_invalid_memory_access(ctx, address, access, true, size, value)) {
+                continue;
+            }
+            cpu_raise_page_fault(ctx, access, true);
+            return NULL;
+        }
+        return base_ptr;
     }
 
-    return base_ptr;
+    cpu_raise_page_fault(ctx, access, true);
+    return NULL;
 }
 
 inline uint8_t* get_memory_write_ptr(CPU_CONTEXT* ctx, uint64_t address, size_t size, uint64_t value = 0) {
@@ -163,7 +173,7 @@ inline uint8_t* get_memory_write_ptr(CPU_CONTEXT* ctx, uint64_t address, size_t 
 }
 
 inline bool cpu_is_host_write_passthrough(CPU_CONTEXT* ctx) {
-    return ctx && ctx->mem_mgr && mm_has_host_passthrough(ctx->mem_mgr, MM_PROT_WRITE);
+    return ctx && ctx->mem_mgr && mm_has_host_passthrough(ctx->mem_mgr, MM_PROT_WRITE) && !ctx->mem_mgr->host_write_isolation_enabled;
 }
 
 inline uint16_t read_memory_word(CPU_CONTEXT* ctx, uint64_t address) {

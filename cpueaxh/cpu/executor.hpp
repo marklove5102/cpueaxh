@@ -418,17 +418,33 @@ int cpu_step(CPU_CONTEXT* ctx) {
             execute_cmpxchg8b16b(ctx, buf, (size_t)fetched);
         }
     }
-    else if (opc == 0x0F3A && mandatory_prefix == 0x66 && is_aeskeygenassist_instruction(buf, fetched, prefix_len)) {
-        execute_aeskeygenassist(ctx, buf, (size_t)fetched);
-    }
-    else if (opc == 0x0F3A && mandatory_prefix == 0x66 && is_roundss_instruction(buf, fetched, prefix_len)) {
-        execute_roundss(ctx, buf, (size_t)fetched);
-    }
-    else if (opc == 0x0F3A && mandatory_prefix == 0x66 && is_roundsd_instruction(buf, fetched, prefix_len)) {
-        execute_roundsd(ctx, buf, (size_t)fetched);
-    }
-    else if (opc == 0x0F3A && mandatory_prefix == 0x66 && is_pcmpistri_instruction(buf, fetched, prefix_len)) {
-        execute_pcmpistri(ctx, buf, (size_t)fetched);
+    else if (opc == 0x0F3A && mandatory_prefix == 0x66) {
+        if (is_aeskeygenassist_instruction(buf, fetched, prefix_len)) {
+            execute_aeskeygenassist(ctx, buf, (size_t)fetched);
+        }
+        else if (is_roundss_instruction(buf, fetched, prefix_len)) {
+            execute_roundss(ctx, buf, (size_t)fetched);
+        }
+        else if (is_roundsd_instruction(buf, fetched, prefix_len)) {
+            execute_roundsd(ctx, buf, (size_t)fetched);
+        }
+        else if (is_pcmpestrm_instruction(buf, fetched, prefix_len)) {
+            execute_pcmpestrm(ctx, buf, (size_t)fetched);
+        }
+        else if (is_pcmpestri_instruction(buf, fetched, prefix_len)) {
+            execute_pcmpestri(ctx, buf, (size_t)fetched);
+        }
+        else if (is_pcmpistrm_instruction(buf, fetched, prefix_len)) {
+            execute_pcmpistrm(ctx, buf, (size_t)fetched);
+        }
+        else if (is_pcmpistri_instruction(buf, fetched, prefix_len)) {
+            execute_pcmpistri(ctx, buf, (size_t)fetched);
+        }
+        else {
+            raise_ud();
+            result_code = CPU_STEP_UD;
+            goto cpu_step_finish;
+        }
     }
     else if (opc == 0x0FA2) {
         raise_ud();
