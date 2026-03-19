@@ -1496,6 +1496,43 @@ inline MM_ACCESS_STATUS mm_get_contiguous_ptr_checked(MEMORY_MANAGER* mgr, uint6
         return MM_ACCESS_PROT;
     }
 
+    if (perm == MM_PROT_WRITE && !mgr->host_write_isolation_enabled) {
+        MM_ACCESS_STATUS status = mm_get_ptr_checked_ex(mgr, address, perm, &first_ptr, &first_cpu_attrs, false);
+        if (status != MM_ACCESS_OK) {
+            *out_ptr = NULL;
+            if (out_cpu_attrs) {
+                *out_cpu_attrs = first_cpu_attrs;
+            }
+            return status;
+        }
+
+        for (uint64_t offset = 1; offset < size; ++offset) {
+            uint8_t* next_ptr = NULL;
+            uint32_t next_cpu_attrs = 0;
+            status = mm_get_ptr_checked_ex(mgr, address + offset, perm, &next_ptr, &next_cpu_attrs, false);
+            if (status != MM_ACCESS_OK) {
+                *out_ptr = NULL;
+                if (out_cpu_attrs) {
+                    *out_cpu_attrs = next_cpu_attrs;
+                }
+                return status;
+            }
+            if (next_ptr != first_ptr + offset) {
+                *out_ptr = NULL;
+                if (out_cpu_attrs) {
+                    *out_cpu_attrs = next_cpu_attrs;
+                }
+                return MM_ACCESS_PROT;
+            }
+        }
+
+        *out_ptr = first_ptr;
+        if (out_cpu_attrs) {
+            *out_cpu_attrs = first_cpu_attrs;
+        }
+        return MM_ACCESS_OK;
+    }
+
     bool needs_materialized_span = false;
     bool all_isolatable = true;
     for (uint64_t offset = 0; offset < size; ++offset) {

@@ -46,6 +46,7 @@ constexpr std::uint64_t kSeedCount = 128;
 constexpr std::uint64_t kExceptionSeedCount = 128;
 constexpr std::uint64_t kHostIsolationSeedCount = 64;
 constexpr std::uint64_t kHostIsolationGroupSeedCount = 32;
+constexpr std::uint64_t kHostStackSeedCount = 64;
 constexpr std::uint64_t kContextApiSeedCount = 128;
 constexpr std::uint64_t kGuestCodeBase = 0x100000;
 constexpr std::uint64_t kGuestStackBase = 0x200000;
@@ -2678,10 +2679,11 @@ inline bool run_manual_exception_case_public(
 inline bool emit_host_mov_reg_imm64(std::vector<std::uint8_t>& code, std::uint8_t reg_low3, std::uint64_t imm);
 inline bool run_host_write_isolation_case(const std::string& name, std::uint64_t seed, Failure& failure);
 inline bool run_host_write_isolation_groups_case(const std::string& name, std::uint64_t seed, Failure& failure);
+inline bool run_host_stack_roundtrip_case(const std::string& name, std::uint64_t seed, Failure& failure);
 
 inline std::uint64_t manual_special_case_count(const HostFeatures& features) {
     (void)features;
-    return kSeedCount * 6ull + kExceptionSeedCount * 8ull + kHostIsolationSeedCount + kHostIsolationGroupSeedCount + kContextApiSeedCount;
+    return kSeedCount * 6ull + kExceptionSeedCount * 8ull + kHostIsolationSeedCount + kHostIsolationGroupSeedCount + kHostStackSeedCount + kContextApiSeedCount;
 }
 
 inline bool run_manual_special_tests(const HostFeatures& features, std::uint64_t& executed, std::uint64_t total) {
@@ -2763,10 +2765,16 @@ inline bool run_manual_special_tests(const HostFeatures& features, std::uint64_t
         if (!tick(run_host_write_isolation_groups_case("host_write_isolation_groups:" + std::to_string(seed8), seed8, failure), failure)) return false;
     }
 
+    for (std::uint64_t seed_index = 0; seed_index < kHostStackSeedCount; ++seed_index) {
+        Failure failure;
+        const std::uint64_t seed9 = seeded(seed_index, 0xE251);
+        if (!tick(run_host_stack_roundtrip_case("host_stack_roundtrip:" + std::to_string(seed9), seed9, failure), failure)) return false;
+    }
+
     for (std::uint64_t seed_index = 0; seed_index < kContextApiSeedCount; ++seed_index) {
         Failure failure;
-        const std::uint64_t seed9 = seeded(seed_index, 0xE301);
-        if (!tick(run_context_api_case("context_api:" + std::to_string(seed9), seed9, failure), failure)) return false;
+        const std::uint64_t seed10 = seeded(seed_index, 0xE301);
+        if (!tick(run_context_api_case("context_api:" + std::to_string(seed10), seed10, failure), failure)) return false;
     }
 
     return true;
@@ -3125,6 +3133,139 @@ inline bool run_host_write_isolation_groups_case(const std::string& name, std::u
     if (data_page) {
         ::VirtualFree(data_page, 0, MEM_RELEASE);
     }
+    if (stack_page) {
+        ::VirtualFree(stack_page, 0, MEM_RELEASE);
+    }
+    if (code_page) {
+        ::VirtualFree(code_page, 0, MEM_RELEASE);
+    }
+    if (engine) {
+        cpueaxh_close(engine);
+    }
+    return ok;
+}
+
+inline bool run_host_stack_roundtrip_case(const std::string& name, std::uint64_t seed, Failure& failure) {
+    cpueaxh_engine* engine = nullptr;
+    std::uint8_t* code_page = nullptr;
+    std::uint8_t* stack_page = nullptr;
+
+    cpueaxh_err err = cpueaxh_open(CPUEAXH_ARCH_X86, CPUEAXH_MODE_64, &engine);
+    if (err != CPUEAXH_ERR_OK) {
+        failure.case_name = name;
+        failure.detail = "cpueaxh_open failed";
+        return false;
+    }
+
+    bool ok = false;
+    do {
+        code_page = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, kCodePageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+        stack_page = static_cast<std::uint8_t*>(::VirtualAlloc(nullptr, kStackSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+        if (!code_page || !stack_page) {
+            failure.case_name = name;
+            failure.detail = "VirtualAlloc failed";
+            break;
+        }
+
+        std::memset(code_page, 0xCC, kCodePageSize);
+        std::memset(stack_page, 0, kStackSize);
+
+        const std::uint64_t r8 = seeded(seed, 0x7101);
+        const std::uint64_t r11 = seeded(seed, 0x7102);
+        const std::uint64_t expected_rbx = ~r8;
+        const std::vector<std::uint8_t> code = {
+            0x4C, 0x89, 0xC3,
+            0x48, 0xF7, 0xD3,
+            0x41, 0x53,
+            0x48, 0x8B, 0x44, 0x24, 0x08,
+            0x4C, 0x31, 0xC8,
+            0x41, 0x5A,
+            0x4D, 0x31, 0xDA,
+            0x4C, 0x09, 0xD0,
+            0xC3,
+        };
+        std::memcpy(code_page, code.data(), code.size());
+
+        err = cpueaxh_set_memory_mode(engine, CPUEAXH_MEMORY_MODE_HOST);
+        if (err != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "cpueaxh_set_memory_mode(host) failed";
+            break;
+        }
+
+        std::uint64_t rsp = reinterpret_cast<std::uint64_t>(stack_page) + kStackSize - 0x80 - sizeof(std::uint64_t);
+        *reinterpret_cast<std::uint64_t*>(rsp) = 0;
+        const std::uint64_t initial_rsp = rsp;
+        std::uint64_t rbp = rsp;
+        std::uint64_t rip = reinterpret_cast<std::uint64_t>(code_page);
+        std::uint64_t r9 = CPUEAXH_EMU_RETURN_MAGIC;
+        std::uint64_t rax = 0;
+        std::uint64_t rbx = 0;
+        std::uint64_t r10 = 0;
+
+        if (cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RSP, &rsp) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RBP, &rbp) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RIP, &rip) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RAX, &rax) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_RBX, &rbx) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_R8, &r8) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_R9, &r9) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_R10, &r10) != CPUEAXH_ERR_OK ||
+            cpueaxh_reg_write(engine, CPUEAXH_X86_REG_R11, &r11) != CPUEAXH_ERR_OK) {
+            failure.case_name = name;
+            failure.detail = "host stack register initialization failed";
+            break;
+        }
+
+        err = cpueaxh_emu_start_function(engine, 0, 0, 1024);
+        if (err != CPUEAXH_ERR_OK || cpueaxh_code_exception(engine) != CPUEAXH_EXCEPTION_NONE) {
+            failure.case_name = name;
+            failure.detail = "host stack execution failed";
+            break;
+        }
+
+        std::uint64_t observed_rax = 0;
+        std::uint64_t observed_rbx = 0;
+        std::uint64_t observed_rsp = 0;
+        std::uint64_t observed_r10 = 0;
+        if (!read_engine_reg(engine, CPUEAXH_X86_REG_RAX, observed_rax) ||
+            !read_engine_reg(engine, CPUEAXH_X86_REG_RBX, observed_rbx) ||
+            !read_engine_reg(engine, CPUEAXH_X86_REG_RSP, observed_rsp) ||
+            !read_engine_reg(engine, CPUEAXH_X86_REG_R10, observed_r10)) {
+            failure.case_name = name;
+            failure.detail = "host stack register read failed";
+            break;
+        }
+
+        if (observed_rax != 0) {
+            failure.case_name = name;
+            failure.detail = "host stack return-slot verification failed";
+            break;
+        }
+        if (observed_rbx != expected_rbx) {
+            failure.case_name = name;
+            failure.detail = "host stack not result mismatch";
+            break;
+        }
+        if (observed_r10 != 0) {
+            failure.case_name = name;
+            failure.detail = "host stack pop verification failed";
+            break;
+        }
+        if (observed_rsp != initial_rsp + sizeof(std::uint64_t)) {
+            failure.case_name = name;
+            failure.detail = "host stack pointer did not restore";
+            break;
+        }
+        if (*reinterpret_cast<std::uint64_t*>(initial_rsp) != 0) {
+            failure.case_name = name;
+            failure.detail = "host stack return slot mutated";
+            break;
+        }
+
+        ok = true;
+    } while (false);
+
     if (stack_page) {
         ::VirtualFree(stack_page, 0, MEM_RELEASE);
     }
