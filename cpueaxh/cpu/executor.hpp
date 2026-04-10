@@ -978,6 +978,7 @@ static int cpu_step_with_prefetch(CPU_CONTEXT* ctx, const uint8_t* prefetched_by
 cpu_step_finish:
     if (cpu_has_exception(ctx)) {
         CPU_EXCEPTION_STATE exception_state = ctx->exception;
+        uint64_t saved_cr2 = ctx->control_regs[REG_CR2];
         if (scalar_snapshot_valid) {
             cpu_restore_scalar_snapshot(ctx, &saved_scalar);
             if (vector_snapshot_valid) {
@@ -985,6 +986,7 @@ cpu_step_finish:
             }
         }
         ctx->exception = exception_state;
+        ctx->control_regs[REG_CR2] = saved_cr2;
         ctx->segment_override = -1;
         return CPU_STEP_EXCEPTION;
     }

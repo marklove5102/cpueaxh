@@ -190,9 +190,10 @@ inline int cpu_default_segment_for_memory_operand(const CPU_CONTEXT* ctx, uint8_
     }
 
     if (addr_size != 16) {
+        const bool long_mode = ctx && ctx->cs.descriptor.long_mode;
         if ((rm & 0x07) == 4 && has_sib) {
             uint8_t base = sib & 0x07;
-            if (ctx && ctx->rex_b && addr_size == 64) {
+            if (ctx && ctx->rex_b && long_mode) {
                 base |= 0x08;
             }
             if (!(base == 5 && mod == 0) && cpu_memory_base_register_uses_ss(base)) {
@@ -201,10 +202,10 @@ inline int cpu_default_segment_for_memory_operand(const CPU_CONTEXT* ctx, uint8_
         }
         else {
             int decoded_rm = rm;
-            if (ctx && ctx->rex_b && addr_size == 64) {
+            if (ctx && ctx->rex_b && long_mode) {
                 decoded_rm |= 0x08;
             }
-            if (!(mod == 0 && (rm & 0x07) == 5 && !(ctx && ctx->rex_b && addr_size == 64)) &&
+            if (!(mod == 0 && (rm & 0x07) == 5 && !(ctx && ctx->rex_b && long_mode)) &&
                 cpu_memory_base_register_uses_ss(decoded_rm)) {
                 return SEG_SS;
             }
@@ -220,8 +221,9 @@ inline int cpu_default_segment_for_memory_operand(const CPU_CONTEXT* ctx, uint8_
 uint64_t get_effective_offset(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t* sib, int32_t* disp, int addr_size, int inst_size = 0) {
     uint8_t mod = (modrm >> 6) & 0x03;
     uint8_t rm = modrm & 0x07;
+    const bool long_mode = ctx->cs.descriptor.long_mode;
 
-    if (ctx->rex_b && addr_size == 64) {
+    if (ctx->rex_b && long_mode) {
         rm |= 0x08;
     }
 
@@ -240,15 +242,15 @@ uint64_t get_effective_offset(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t* sib, int
             uint8_t index = raw_index;
             uint8_t base = raw_base;
 
-            if (ctx->rex_x && addr_size == 64) {
+            if (ctx->rex_x && long_mode) {
                 index |= 0x08;
             }
-            if (ctx->rex_b && addr_size == 64) {
+            if (ctx->rex_b && long_mode) {
                 base |= 0x08;
             }
 
-            bool has_index = !(raw_index == 4 && !(addr_size == 64 && ctx->rex_x));
-            bool no_base = (mod == 0 && raw_base == 5 && !(addr_size == 64 && ctx->rex_b));
+            bool has_index = !(raw_index == 4 && !(long_mode && ctx->rex_x));
+            bool no_base = (mod == 0 && raw_base == 5 && !(long_mode && ctx->rex_b));
 
             if (no_base) {
                 addr = (uint32_t)(*disp);
