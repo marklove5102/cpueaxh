@@ -112,9 +112,7 @@ DecodedInstruction decode_cpuid_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_cpuid(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    decode_cpuid_instruction(ctx, code, code_size);
-
+inline void execute_cpuid_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* /*inst_ptr*/) {
     int cpu_info[4] = {};
     cpu_query_cpuid(cpu_info, get_reg32(ctx, REG_RAX), get_reg32(ctx, REG_RCX));
 
@@ -122,4 +120,15 @@ void execute_cpuid(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     set_reg32(ctx, REG_RBX, (uint32_t)cpu_info[1]);
     set_reg32(ctx, REG_RCX, (uint32_t)cpu_info[2]);
     set_reg32(ctx, REG_RDX, (uint32_t)cpu_info[3]);
+}
+
+void execute_cpuid(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_cpuid_instruction(ctx, code, code_size);
+    execute_cpuid_with_decoded(ctx, &inst);
+}
+
+inline void execute_cpuid_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_cpuid_with_decoded(ctx, &dec->cached);
 }

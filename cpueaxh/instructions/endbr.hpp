@@ -155,3 +155,8 @@ inline void execute_endbr(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
 
     ctx->last_inst_size = (int)(offset + 3);
 }
+
+inline void execute_endbr_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+}

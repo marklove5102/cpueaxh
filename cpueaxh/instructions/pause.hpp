@@ -68,6 +68,16 @@ DecodedInstruction decode_pause_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
+inline void execute_pause_with_decoded(CPU_CONTEXT* /*ctx*/, const DecodedInstruction* /*inst_ptr*/) {
+    // PAUSE is architecturally a hint with no observable side effects in this emulator.
+}
+
 void execute_pause(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     decode_pause_instruction(ctx, code, code_size);
+}
+
+inline void execute_pause_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_pause_with_decoded(ctx, &dec->cached);
 }

@@ -336,9 +336,9 @@ bool sse2_convert_round_fp_to_integer(double source, int dest_bits, bool truncat
     return true;
 }
 
-void execute_sse2_convert(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    uint8_t mandatory_prefix = 0;
-    DecodedInstruction inst = decode_sse2_convert_instruction(ctx, code, code_size, &mandatory_prefix);
+inline void execute_sse2_convert_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    const uint8_t mandatory_prefix = inst.mandatory_prefix;
     int dest = decode_sse2_convert_xmm_reg_index(ctx, inst.modrm);
 
     if (inst.opcode == 0x5A) {
@@ -411,4 +411,24 @@ void execute_sse2_convert(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     raise_ud_ctx(ctx);
+}
+
+inline DecodedInstruction decode_sse2_convert_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_convert_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    return inst;
+}
+
+void execute_sse2_convert(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_convert_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    execute_sse2_convert_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse2_convert_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse2_convert_with_decoded(ctx, &dec->cached);
 }

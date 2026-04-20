@@ -75,8 +75,8 @@ DecodedInstruction decode_cbw_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     return inst;
 }
 
-void execute_cbw(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_cbw_instruction(ctx, code, code_size);
+inline void execute_cbw_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     if (inst.operand_size == 16) {
         int16_t value = (int8_t)get_reg8(ctx, REG_RAX);
@@ -90,4 +90,15 @@ void execute_cbw(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         int64_t value = (int32_t)get_reg32(ctx, REG_RAX);
         set_reg64(ctx, REG_RAX, (uint64_t)value);
     }
+}
+
+void execute_cbw(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_cbw_instruction(ctx, code, code_size);
+    execute_cbw_with_decoded(ctx, &inst);
+}
+
+inline void execute_cbw_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_cbw_with_decoded(ctx, &dec->cached);
 }

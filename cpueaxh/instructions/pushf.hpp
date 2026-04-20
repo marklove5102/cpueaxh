@@ -116,8 +116,8 @@ DecodedInstruction decode_pushf_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_pushf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_pushf_instruction(ctx, code, code_size);
+inline void execute_pushf_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     if (inst.opcode == 0x9C) {
         pushf_value(ctx, inst.operand_size, get_pushf_image(ctx, inst.operand_size));
@@ -125,4 +125,15 @@ void execute_pushf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     write_popf_flags(ctx, inst.operand_size, popf_value(ctx, inst.operand_size));
+}
+
+void execute_pushf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_pushf_instruction(ctx, code, code_size);
+    execute_pushf_with_decoded(ctx, &inst);
+}
+
+inline void execute_pushf_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_pushf_with_decoded(ctx, &dec->cached);
 }

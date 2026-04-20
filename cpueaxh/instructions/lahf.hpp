@@ -90,8 +90,8 @@ DecodedInstruction decode_lahf_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     return inst;
 }
 
-void execute_lahf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_lahf_instruction(ctx, code, code_size);
+inline void execute_lahf_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     if (inst.opcode == 0x9F) {
         set_ah(ctx, make_lahf_value(ctx));
@@ -99,4 +99,15 @@ void execute_lahf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     apply_sahf_value(ctx, get_ah(ctx));
+}
+
+void execute_lahf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_lahf_instruction(ctx, code, code_size);
+    execute_lahf_with_decoded(ctx, &inst);
+}
+
+inline void execute_lahf_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_lahf_with_decoded(ctx, &dec->cached);
 }

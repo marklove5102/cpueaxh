@@ -161,8 +161,8 @@ DecodedInstruction decode_scas_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     return inst;
 }
 
-void execute_scas(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_scas_instruction(ctx, code, code_size);
+inline void execute_scas_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint64_t dest_index = get_scas_index(ctx, inst.address_size);
     uint64_t dest_addr = scas_segment_base(ctx) + dest_index;
     uint64_t accumulator = read_scas_accumulator(ctx, inst.operand_size);
@@ -177,4 +177,15 @@ void execute_scas(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     else {
         set_scas_index(ctx, inst.address_size, dest_index + step);
     }
+}
+
+void execute_scas(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_scas_instruction(ctx, code, code_size);
+    execute_scas_with_decoded(ctx, &inst);
+}
+
+inline void execute_scas_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_scas_with_decoded(ctx, &dec->cached);
 }

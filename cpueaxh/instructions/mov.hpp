@@ -857,8 +857,11 @@ DecodedInstruction decode_mov_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
 
 // --- MOV instruction executor ---
 
-void execute_mov(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_mov_instruction(ctx, code, code_size);
+// Shared body that runs MOV semantics from an already-decoded
+// DecodedInstruction. Both the legacy execute_mov path (which decodes inline)
+// and the cache fast path (execute_mov_fast / decoded handler) call into this.
+inline void execute_mov_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     switch (inst.opcode) {
     // 88 /r - MOV r/m8, r8
@@ -1014,4 +1017,47 @@ void execute_mov(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         }
         break;
     }
+}
+
+// Legacy entry: scan prefixes + decode + execute. Kept as the canonical entry
+// for non-cached paths and unit tests.
+void execute_mov(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_mov_instruction(ctx, code, code_size);
+    execute_mov_with_decoded(ctx, &inst);
+}
+
+// Fast entry used by the instruction cache: the decoder has already filled
+// dec->cached and dec->prefix on the cold miss, so we just stamp the prefix
+// bits back into ctx and run the shared executor body. Zero per-step decoding.
+//
+// Memory-form (mod != 3) ModRM is supported here because the executor body
+// will use inst.mem_address to dereference the operand, and that field
+// captured live register contents at decode time. Before delegating to
+// execute_mov_with_decoded we therefore copy the cached DecodedInstruction
+// and recompute mem_address from the cached modrm/sib/disp against the
+// current ctx. All other DecodedInstruction fields (opcode, modrm, sib,
+// displacement, operand_size, address_size, immediate) are byte-derived and
+// safe to reuse verbatim.
+//
+// Side note on RIP-relative ([rip + disp32], 64-bit address mode): the
+// decoder recomputes that case separately via finalize_rip_relative_address
+// using inst_size. get_effective_address gets the same effect when called
+// here, because we pass the cached length via ctx->last_inst_size and the
+// underlying offset helper picks the post-decode RIP from
+// (ctx->rip + ctx->last_inst_size). Keep the apply_prefix() and the
+// last_inst_size store ordered before the address recomputation so both bits
+// of state are visible to get_effective_address.
+inline void execute_mov_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+
+    if (!decoded_inst_needs_mem_recompute(&dec->cached)) {
+        execute_mov_with_decoded(ctx, &dec->cached);
+        return;
+    }
+
+    DecodedInstruction live = dec->cached;
+    live.mem_address = get_effective_address(ctx, live.modrm, &live.sib, &live.displacement,
+                                             live.address_size, dec->length);
+    execute_mov_with_decoded(ctx, &live);
 }

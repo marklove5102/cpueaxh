@@ -149,8 +149,8 @@ DecodedInstruction decode_movs_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     return inst;
 }
 
-void execute_movs(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_movs_instruction(ctx, code, code_size);
+inline void execute_movs_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     const int source_segment = (int)inst.immediate;
     uint64_t source_index = get_movs_index(ctx, REG_RSI, inst.address_size);
     uint64_t dest_index = get_movs_index(ctx, REG_RDI, inst.address_size);
@@ -173,4 +173,15 @@ void execute_movs(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         set_movs_index(ctx, REG_RSI, inst.address_size, source_index + step);
         set_movs_index(ctx, REG_RDI, inst.address_size, dest_index + step);
     }
+}
+
+void execute_movs(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_movs_instruction(ctx, code, code_size);
+    execute_movs_with_decoded(ctx, &inst);
+}
+
+inline void execute_movs_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_movs_with_decoded(ctx, &dec->cached);
 }

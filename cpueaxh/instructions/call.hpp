@@ -138,6 +138,9 @@ void call_far_mem(CPU_CONTEXT* ctx, uint64_t mem_addr, int operand_size, uint64_
     // Load new CS
     ctx->cs.selector = (new_selector & 0xFFFC) | ctx->cpl; // CS.RPL = CPL
     ctx->cs.descriptor = new_desc;
+    // Far-call can switch between 16/32/64-bit code segments; invalidate
+    // the cached mode-key bits so the executor reads the new descriptor.
+    ctx->cached_mode_key_valid = 0;
 
     // Load new RIP
     ctx->rip = new_offset;
@@ -194,6 +197,8 @@ void call_far_ptr(CPU_CONTEXT* ctx, uint16_t new_selector, uint32_t new_offset, 
     // Load new CS
     ctx->cs.selector = (new_selector & 0xFFFC) | ctx->cpl;
     ctx->cs.descriptor = new_desc;
+    // Same rationale as call_far above -- protect the mode-key cache.
+    ctx->cached_mode_key_valid = 0;
 
     // Load new EIP
     ctx->rip = target_eip;
@@ -450,8 +455,8 @@ DecodedInstruction decode_call_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
 
 // --- CALL instruction executor ---
 
-void execute_call(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_call_instruction(ctx, code, code_size);
+inline void execute_call_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     // Return address = RIP pointing to next instruction after this CALL
     uint64_t return_rip = ctx->rip + inst.inst_size;
@@ -531,4 +536,15 @@ void execute_call(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         break;
     }
     }
+}
+
+void execute_call(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_call_instruction(ctx, code, code_size);
+    execute_call_with_decoded(ctx, &inst);
+}
+
+inline void execute_call_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_call_with_decoded(ctx, &dec->cached);
 }

@@ -479,7 +479,17 @@ DecodedInstruction decode_bt_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_t
     return inst;
 }
 
+inline void execute_bt_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    execute_bt_operation(ctx, inst_ptr);
+}
+
 void execute_bt(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     DecodedInstruction inst = decode_bt_instruction(ctx, code, code_size);
-    execute_bt_operation(ctx, &inst);
+    execute_bt_with_decoded(ctx, &inst);
+}
+
+inline void execute_bt_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_bt_with_decoded(ctx, &dec->cached);
 }

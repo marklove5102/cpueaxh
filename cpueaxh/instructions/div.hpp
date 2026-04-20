@@ -285,8 +285,8 @@ DecodedInstruction decode_div_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
 
 // --- DIV instruction executor ---
 
-void execute_div(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_div_instruction(ctx, code, code_size);
+inline void execute_div_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     switch (inst.opcode) {
     case 0xF6:
@@ -305,4 +305,15 @@ void execute_div(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         }
         break;
     }
+}
+
+void execute_div(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_div_instruction(ctx, code, code_size);
+    execute_div_with_decoded(ctx, &inst);
+}
+
+inline void execute_div_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_div_with_decoded(ctx, &dec->cached);
 }

@@ -273,10 +273,10 @@ XMMRegister apply_sse2_pshuflw128(XMMRegister src, uint8_t imm8) {
     return result;
 }
 
-void execute_sse2_shuffle(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    uint8_t mandatory_prefix = 0;
-    bool has_imm8 = false;
-    DecodedInstruction inst = decode_sse2_shuffle_instruction(ctx, code, code_size, &mandatory_prefix, &has_imm8);
+inline void execute_sse2_shuffle_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    const uint8_t mandatory_prefix = inst.mandatory_prefix;
+
     if (inst.opcode == 0xC5) {
         if (((inst.modrm >> 6) & 0x03) != 3) {
             raise_ud_ctx(ctx);
@@ -335,4 +335,26 @@ void execute_sse2_shuffle(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     raise_ud_ctx(ctx);
+}
+
+inline DecodedInstruction decode_sse2_shuffle_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    bool has_imm8 = false;
+    DecodedInstruction inst = decode_sse2_shuffle_instruction(ctx, code, code_size, &mandatory_prefix, &has_imm8);
+    inst.mandatory_prefix = mandatory_prefix;
+    return inst;
+}
+
+void execute_sse2_shuffle(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    bool has_imm8 = false;
+    DecodedInstruction inst = decode_sse2_shuffle_instruction(ctx, code, code_size, &mandatory_prefix, &has_imm8);
+    inst.mandatory_prefix = mandatory_prefix;
+    execute_sse2_shuffle_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse2_shuffle_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse2_shuffle_with_decoded(ctx, &dec->cached);
 }

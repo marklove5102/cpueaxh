@@ -423,8 +423,8 @@ DecodedInstruction decode_test_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
 
 // --- TEST instruction executor ---
 
-void execute_test(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_test_instruction(ctx, code, code_size);
+inline void execute_test_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     switch (inst.opcode) {
     // A8 ib - TEST AL, imm8
@@ -481,4 +481,22 @@ void execute_test(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         }
         break;
     }
+}
+
+void execute_test(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_test_instruction(ctx, code, code_size);
+    execute_test_with_decoded(ctx, &inst);
+}
+
+inline void execute_test_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    if (!decoded_inst_needs_mem_recompute(&dec->cached)) {
+        execute_test_with_decoded(ctx, &dec->cached);
+        return;
+    }
+    DecodedInstruction live = dec->cached;
+    live.mem_address = get_effective_address(ctx, live.modrm, &live.sib, &live.displacement,
+                                             live.address_size, dec->length);
+    execute_test_with_decoded(ctx, &live);
 }

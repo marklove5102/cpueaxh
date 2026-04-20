@@ -301,8 +301,8 @@ DecodedInstruction decode_neg_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
 
 // --- NEG instruction executor ---
 
-void execute_neg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_neg_instruction(ctx, code, code_size);
+inline void execute_neg_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     switch (inst.opcode) {
     // F6 /3 - NEG r/m8
@@ -323,4 +323,15 @@ void execute_neg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         }
         break;
     }
+}
+
+void execute_neg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_neg_instruction(ctx, code, code_size);
+    execute_neg_with_decoded(ctx, &inst);
+}
+
+inline void execute_neg_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_neg_with_decoded(ctx, &dec->cached);
 }

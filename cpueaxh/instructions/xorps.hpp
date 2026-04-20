@@ -162,8 +162,8 @@ XMMRegister read_xorps_source_operand(CPU_CONTEXT* ctx, const DecodedInstruction
     return read_xmm_memory(ctx, inst->mem_address);
 }
 
-void execute_xorps(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_xorps_instruction(ctx, code, code_size);
+inline void execute_xorps_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     int dest = decode_xorps_xmm_reg_index(ctx, inst.modrm);
     XMMRegister lhs = get_xmm128(ctx, dest);
     XMMRegister rhs = read_xorps_source_operand(ctx, &inst);
@@ -172,4 +172,15 @@ void execute_xorps(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     result.low = lhs.low ^ rhs.low;
     result.high = lhs.high ^ rhs.high;
     set_xmm128(ctx, dest, result);
+}
+
+void execute_xorps(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_xorps_instruction(ctx, code, code_size);
+    execute_xorps_with_decoded(ctx, &inst);
+}
+
+inline void execute_xorps_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_xorps_with_decoded(ctx, &dec->cached);
 }

@@ -75,8 +75,8 @@ DecodedInstruction decode_cdq_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     return inst;
 }
 
-void execute_cdq(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_cdq_instruction(ctx, code, code_size);
+inline void execute_cdq_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     if (inst.operand_size == 16) {
         uint16_t ax = get_reg16(ctx, REG_RAX);
@@ -90,4 +90,15 @@ void execute_cdq(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         int64_t rax = (int64_t)get_reg64(ctx, REG_RAX);
         set_reg64(ctx, REG_RDX, rax < 0 ? 0xFFFFFFFFFFFFFFFFULL : 0x0000000000000000ULL);
     }
+}
+
+void execute_cdq(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_cdq_instruction(ctx, code, code_size);
+    execute_cdq_with_decoded(ctx, &inst);
+}
+
+inline void execute_cdq_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_cdq_with_decoded(ctx, &dec->cached);
 }

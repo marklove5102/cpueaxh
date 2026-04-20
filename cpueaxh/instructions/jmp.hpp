@@ -100,9 +100,13 @@ void jmp_far(CPU_CONTEXT* ctx, uint16_t new_selector, uint64_t new_offset, int o
         target_rip = cpu_mask_code_offset(target_rip, operand_size);
     }
 
-    // Load new CS (no stack changes ¡ª this is JMP, not CALL)
+    // Load new CS (no stack changes - this is JMP, not CALL)
     ctx->cs.selector = (new_selector & 0xFFFC) | ctx->cpl; // CS.RPL = CPL
     ctx->cs.descriptor = new_desc;
+    // Far-jmp can switch between 16/32/64-bit code segments; invalidate
+    // the cached mode-key bits so the executor picks up the new
+    // descriptor on the next instruction.
+    ctx->cached_mode_key_valid = 0;
 
     // Load new RIP
     ctx->rip = target_rip;
@@ -279,7 +283,7 @@ DecodedInstruction decode_jmp_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
             if (mod == 3) {
                 raise_ud_ctx(ctx);
             }
-            // Operand size for far pointer: REX.W ¡ú m16:64, default ¡ú m16:32, 0x66 ¡ú m16:16
+            // Operand size for far pointer: REX.W ï¿½ï¿½ m16:64, default ï¿½ï¿½ m16:32, 0x66 ï¿½ï¿½ m16:16
             if (cpu_is_64bit_code(ctx)) {
                 if (ctx->rex_w) {
                     inst.operand_size = 64;
@@ -305,7 +309,7 @@ DecodedInstruction decode_jmp_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
         }
         // Read far pointer: offset then selector
         if (inst.operand_size == 32) {
-            // ptr16:32 ¡ª 4-byte offset + 2-byte selector
+            // ptr16:32 ï¿½ï¿½ 4-byte offset + 2-byte selector
             if (offset + 6 > code_size) {
                 raise_gp_ctx(ctx, 0);
             }
@@ -320,7 +324,7 @@ DecodedInstruction decode_jmp_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
             inst.imm_size = 6;
         }
         else {
-            // ptr16:16 ¡ª 2-byte offset + 2-byte selector
+            // ptr16:16 ï¿½ï¿½ 2-byte offset + 2-byte selector
             if (offset + 4 > code_size) {
                 raise_gp_ctx(ctx, 0);
             }
@@ -348,8 +352,8 @@ DecodedInstruction decode_jmp_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
 
 // --- JMP instruction executor ---
 
-void execute_jmp(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_jmp_instruction(ctx, code, code_size);
+inline void execute_jmp_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     // next_rip = address of instruction following this JMP
     uint64_t next_rip = ctx->rip + (uint64_t)inst.inst_size;
@@ -399,7 +403,7 @@ void execute_jmp(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
             }
         }
         else {
-            // FF /5 ¡ª far absolute indirect via memory
+            // FF /5 ï¿½ï¿½ far absolute indirect via memory
             uint64_t new_offset;
             uint16_t new_selector;
 
@@ -429,4 +433,15 @@ void execute_jmp(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         break;
     }
     }
+}
+
+void execute_jmp(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_jmp_instruction(ctx, code, code_size);
+    execute_jmp_with_decoded(ctx, &inst);
+}
+
+inline void execute_jmp_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_jmp_with_decoded(ctx, &dec->cached);
 }

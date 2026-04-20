@@ -253,8 +253,8 @@ DecodedInstruction decode_movzx_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_movzx(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_movzx_instruction(ctx, code, code_size);
+inline void execute_movzx_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     switch (inst.opcode) {
     case 0xB6:
@@ -278,4 +278,22 @@ void execute_movzx(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         }
         break;
     }
+}
+
+void execute_movzx(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_movzx_instruction(ctx, code, code_size);
+    execute_movzx_with_decoded(ctx, &inst);
+}
+
+inline void execute_movzx_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    if (!decoded_inst_needs_mem_recompute(&dec->cached)) {
+        execute_movzx_with_decoded(ctx, &dec->cached);
+        return;
+    }
+    DecodedInstruction live = dec->cached;
+    live.mem_address = get_effective_address(ctx, live.modrm, &live.sib, &live.displacement,
+                                             live.address_size, dec->length);
+    execute_movzx_with_decoded(ctx, &live);
 }

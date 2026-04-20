@@ -250,9 +250,8 @@ void sse2_pack_interleave(const uint8_t lhs[16], const uint8_t rhs[16], int unit
     }
 }
 
-void execute_sse2_pack(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    uint8_t mandatory_prefix = 0;
-    DecodedInstruction inst = decode_sse2_pack_instruction(ctx, code, code_size, &mandatory_prefix);
+inline void execute_sse2_pack_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     int dest = decode_sse2_pack_xmm_reg_index(ctx, inst.modrm);
     uint8_t lhs_bytes[16] = {};
     uint8_t rhs_bytes[16] = {};
@@ -310,4 +309,23 @@ void execute_sse2_pack(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     set_xmm128(ctx, dest, sse2_pack_bytes_to_xmm(result_bytes));
+}
+
+inline DecodedInstruction decode_sse2_pack_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_pack_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    return inst;
+}
+
+void execute_sse2_pack(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_pack_instruction(ctx, code, code_size, &mandatory_prefix);
+    execute_sse2_pack_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse2_pack_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse2_pack_with_decoded(ctx, &dec->cached);
 }

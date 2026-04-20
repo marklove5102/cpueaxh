@@ -34,7 +34,12 @@ CTX_XMM12  EQU 336
 CTX_XMM13  EQU 352
 CTX_XMM14  EQU 368
 CTX_XMM15  EQU 384
-CTX_MXCSR  EQU 720
+; mxcsr lives after xmm[16] (144..400), ymm_upper[16] (400..656),
+; zmm_upper[16] (656..1168), opmask[8] (1168..1232) and mm[8]
+; (1232..1296) in cpueaxh_x86_context. The previous value (720)
+; pointed inside ymm_upper, which silently fed garbage YMM bits to
+; ldmxcsr and unmasked FP exceptions in the host on return.
+CTX_MXCSR  EQU 1296
 
 BLOCK_HOST_RSP     EQU 0
 BLOCK_CTXPTR       EQU 8

@@ -222,11 +222,8 @@ static inline uint64_t popcnt_count_bits(uint64_t value, int operand_size) {
     return count;
 }
 
-static inline void execute_popcnt(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    const DecodedInstruction inst = decode_popcnt_instruction(ctx, code, code_size);
-    if (cpu_has_exception(ctx)) {
-        return;
-    }
+static inline void execute_popcnt_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     if (!cpu_has_popcnt_feature()) {
         raise_ud_ctx(ctx);
@@ -247,4 +244,18 @@ static inline void execute_popcnt(CPU_CONTEXT* ctx, uint8_t* code, size_t code_s
     set_flag(ctx, RFLAGS_ZF, source == 0);
     set_flag(ctx, RFLAGS_SF, false);
     set_flag(ctx, RFLAGS_OF, false);
+}
+
+static inline void execute_popcnt(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    const DecodedInstruction inst = decode_popcnt_instruction(ctx, code, code_size);
+    if (cpu_has_exception(ctx)) {
+        return;
+    }
+    execute_popcnt_with_decoded(ctx, &inst);
+}
+
+static inline void execute_popcnt_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_popcnt_with_decoded(ctx, &dec->cached);
 }

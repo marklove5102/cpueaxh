@@ -18,7 +18,16 @@
     <ClInclude Include="cpu\calc.hpp">
       <Filter>cpu</Filter>
     </ClInclude>
+    <ClInclude Include="cpu\decoded.hpp">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="cpu\decoder.hpp">
+      <Filter>cpu</Filter>
+    </ClInclude>
     <ClInclude Include="cpu\def.h">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="cpu\dispatch_helpers.hpp">
       <Filter>cpu</Filter>
     </ClInclude>
     <ClInclude Include="cpu\executor.hpp">
@@ -28,6 +37,9 @@
       <Filter>cpu</Filter>
     </ClInclude>
     <ClInclude Include="cpu\init.hpp">
+      <Filter>cpu</Filter>
+    </ClInclude>
+    <ClInclude Include="cpu\inst_cache.hpp">
       <Filter>cpu</Filter>
     </ClInclude>
     <ClInclude Include="cpu\memory.hpp">

@@ -170,7 +170,25 @@ DecodedInstruction decode_movsxd_instruction(CPU_CONTEXT* ctx, uint8_t* code, si
     return inst;
 }
 
+inline void execute_movsxd_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    movsxd_r64_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+}
+
 void execute_movsxd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     DecodedInstruction inst = decode_movsxd_instruction(ctx, code, code_size);
-    movsxd_r64_rm32(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address);
+    execute_movsxd_with_decoded(ctx, &inst);
+}
+
+inline void execute_movsxd_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    if (!decoded_inst_needs_mem_recompute(&dec->cached)) {
+        execute_movsxd_with_decoded(ctx, &dec->cached);
+        return;
+    }
+    DecodedInstruction live = dec->cached;
+    live.mem_address = get_effective_address(ctx, live.modrm, &live.sib, &live.displacement,
+                                             live.address_size, dec->length);
+    execute_movsxd_with_decoded(ctx, &live);
 }

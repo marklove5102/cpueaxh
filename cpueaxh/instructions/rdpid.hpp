@@ -127,12 +127,8 @@ inline DecodedInstruction decode_rdpid_instruction(CPU_CONTEXT* ctx, uint8_t* co
     return inst;
 }
 
-inline void execute_rdpid(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_rdpid_instruction(ctx, code, code_size);
-    if (cpu_has_exception(ctx)) {
-        return;
-    }
-
+inline void execute_rdpid_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     int rm = decode_rdpid_rm_index(ctx, inst.modrm);
     if (inst.operand_size == 64) {
         set_reg64(ctx, rm, (uint64_t)ctx->processor_id);
@@ -140,4 +136,18 @@ inline void execute_rdpid(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     set_reg32(ctx, rm, ctx->processor_id);
+}
+
+inline void execute_rdpid(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_rdpid_instruction(ctx, code, code_size);
+    if (cpu_has_exception(ctx)) {
+        return;
+    }
+    execute_rdpid_with_decoded(ctx, &inst);
+}
+
+inline void execute_rdpid_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_rdpid_with_decoded(ctx, &dec->cached);
 }

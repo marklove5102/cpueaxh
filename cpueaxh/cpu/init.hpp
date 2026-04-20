@@ -35,4 +35,10 @@ void init_cpu_context(CPU_CONTEXT* ctx, MEMORY_MANAGER* mem_mgr, bool start_in_c
     ctx->gs = ctx->ds;
     ctx->ss = ctx->ds;
     ctx->ss.selector = 0x18;
+
+    // The MEMSET above already cleared cached_mode_key_valid, but we set
+    // long_mode_active and cs.descriptor.{long_mode,db} after that point,
+    // so leave the cache invalid here -- the first cpu_inst_cache_mode_key
+    // call after init will recompute and prime it from the final state.
+    ctx->cached_mode_key_valid = 0;
 }

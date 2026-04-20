@@ -305,8 +305,19 @@ DecodedInstruction decode_sar_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     return inst;
 }
 
-void execute_sar(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_sar_instruction(ctx, code, code_size);
+inline void execute_sar_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    DecodedInstruction inst = *inst_ptr;
     uint8_t count = decode_sar_count(ctx, &inst);
     sar_rm(ctx, inst.modrm, inst.sib, inst.displacement, inst.mem_address, inst.operand_size, count);
+}
+
+void execute_sar(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_sar_instruction(ctx, code, code_size);
+    execute_sar_with_decoded(ctx, &inst);
+}
+
+inline void execute_sar_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sar_with_decoded(ctx, &dec->cached);
 }

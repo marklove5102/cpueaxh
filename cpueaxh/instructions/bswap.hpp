@@ -99,8 +99,8 @@ DecodedInstruction decode_bswap_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_bswap(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_bswap_instruction(ctx, code, code_size);
+inline void execute_bswap_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     int reg = decode_bswap_reg_index(ctx, inst.opcode);
 
     if (inst.operand_size == 64) {
@@ -111,4 +111,15 @@ void execute_bswap(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         uint32_t value = get_reg32(ctx, reg);
         set_reg32(ctx, reg, byteswap32_bswap(value));
     }
+}
+
+void execute_bswap(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_bswap_instruction(ctx, code, code_size);
+    execute_bswap_with_decoded(ctx, &inst);
+}
+
+inline void execute_bswap_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_bswap_with_decoded(ctx, &dec->cached);
 }

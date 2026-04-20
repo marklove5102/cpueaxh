@@ -239,9 +239,9 @@ uint32_t read_sse_math_scalar_source_bits(CPU_CONTEXT* ctx, const DecodedInstruc
     return read_memory_dword(ctx, inst->mem_address);
 }
 
-void execute_sse_math(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    uint8_t mandatory_prefix = 0;
-    DecodedInstruction inst = decode_sse_math_instruction(ctx, code, code_size, &mandatory_prefix);
+inline void execute_sse_math_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    const uint8_t mandatory_prefix = inst.mandatory_prefix;
     int dest = decode_sse_math_xmm_reg_index(ctx, inst.modrm);
     XMMRegister lhs = get_xmm128(ctx, dest);
 
@@ -307,4 +307,24 @@ void execute_sse_math(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     default:
         raise_ud_ctx(ctx);
     }
+}
+
+inline DecodedInstruction decode_sse_math_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse_math_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    return inst;
+}
+
+void execute_sse_math(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse_math_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    execute_sse_math_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse_math_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse_math_with_decoded(ctx, &dec->cached);
 }

@@ -7,6 +7,7 @@
 struct MEMORY_MANAGER;
 struct CPU_CONTEXT;
 struct cpueaxh_engine;
+struct InstCache;
 
 #ifndef CPUEAXH_HOOK_CODE_PRE
 #define CPUEAXH_HOOK_CODE_PRE 1u
@@ -167,6 +168,12 @@ struct CPU_CONTEXT {
 
     MEMORY_MANAGER* mem_mgr;
     cpueaxh_engine* owner_engine;
+    // Per-engine decoded-instruction cache. Owned by the engine, attached
+    // here so that the executor's hot path can reach it without going through
+    // owner_engine, which simplifies inlining and keeps the cache reachable
+    // from inside cpu_step_with_prefetch when the engine pointer is NULL
+    // (escape callbacks on transient contexts).
+    InstCache* inst_cache;
 
     bool rex_present;
     bool rex_w;
@@ -183,6 +190,19 @@ struct CPU_CONTEXT {
     int last_inst_size;
 
     CPU_EXCEPTION_STATE exception;
+
+    // Cached InstCacheModeKey bits + valid flag. Recomputed lazily by
+    // cpu_inst_cache_mode_key() when cached_mode_key_valid==0. Invalidated
+    // (cached_mode_key_valid=0) on the very few code sites that mutate
+    // long_mode_active or cs.descriptor.{long_mode,db}: engine init,
+    // scalar-snapshot restore, far jmp/call/ret, and the host-bridge
+    // helper. Hot-path read-only accessors (mov/add/etc.) never touch this.
+    //
+    // The cache is purely an optimisation: cpu_inst_cache_mode_key() will
+    // produce the correct value either way; the cache only saves the few
+    // dozen cycles of branch + bit-or work per instruction step.
+    uint8_t cached_mode_key_bits;
+    uint8_t cached_mode_key_valid;
 };
 
 inline uint16_t cpu_x87_default_control_word() {
@@ -338,6 +358,12 @@ inline void cpu_restore_scalar_snapshot(CPU_CONTEXT* ctx, const CPU_SCALAR_SNAPS
     ctx->address_size_override = snapshot->address_size_override;
     ctx->segment_override = snapshot->segment_override;
     ctx->last_inst_size = snapshot->last_inst_size;
+
+    // Snapshot restore wholesale-replaces long_mode_active and cs.descriptor;
+    // mark the mode-key cache stale so the next executor read recomputes
+    // from the restored state instead of returning stale bits captured
+    // before the snapshot was taken.
+    ctx->cached_mode_key_valid = 0;
 }
 
 inline void cpu_capture_vector_snapshot(CPU_VECTOR_SNAPSHOT* out, const CPU_CONTEXT* ctx) {

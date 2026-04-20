@@ -135,8 +135,8 @@ DecodedInstruction decode_stos_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     return inst;
 }
 
-void execute_stos(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_stos_instruction(ctx, code, code_size);
+inline void execute_stos_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint64_t dest_index = get_stos_index(ctx, inst.address_size);
     uint64_t dest_addr = stos_segment_base(ctx) + dest_index;
     uint64_t value = read_stos_accumulator(ctx, inst.operand_size);
@@ -150,4 +150,15 @@ void execute_stos(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     else {
         set_stos_index(ctx, inst.address_size, dest_index + step);
     }
+}
+
+void execute_stos(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_stos_instruction(ctx, code, code_size);
+    execute_stos_with_decoded(ctx, &inst);
+}
+
+inline void execute_stos_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_stos_with_decoded(ctx, &dec->cached);
 }

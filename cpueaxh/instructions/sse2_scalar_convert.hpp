@@ -249,9 +249,9 @@ void sse2_scalar_convert_write_integer_destination(CPU_CONTEXT* ctx, int dest, i
     set_reg32(ctx, dest, success ? (uint32_t)((int32_t)value) : 0x80000000U);
 }
 
-void execute_sse2_scalar_convert(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    uint8_t mandatory_prefix = 0;
-    DecodedInstruction inst = decode_sse2_scalar_convert_instruction(ctx, code, code_size, &mandatory_prefix);
+inline void execute_sse2_scalar_convert_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    const uint8_t mandatory_prefix = inst.mandatory_prefix;
 
     if (inst.opcode == 0x5A) {
         int dest = decode_sse2_scalar_convert_xmm_reg_index(ctx, inst.modrm);
@@ -314,4 +314,24 @@ void execute_sse2_scalar_convert(CPU_CONTEXT* ctx, uint8_t* code, size_t code_si
     int64_t integer_value = 0;
     bool success = sse2_convert_round_fp_to_integer(source, dest_bits, inst.opcode == 0x2C, ctx->mxcsr, &integer_value);
     sse2_scalar_convert_write_integer_destination(ctx, dest, dest_bits, success, integer_value);
+}
+
+inline DecodedInstruction decode_sse2_scalar_convert_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_scalar_convert_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    return inst;
+}
+
+void execute_sse2_scalar_convert(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_scalar_convert_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    execute_sse2_scalar_convert_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse2_scalar_convert_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse2_scalar_convert_with_decoded(ctx, &dec->cached);
 }

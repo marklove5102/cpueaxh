@@ -66,6 +66,10 @@ struct MEMORY_MANAGER {
     bool host_write_passthrough;
     bool host_exec_passthrough;
     MM_PAGE_CACHE_ENTRY page_cache[MM_PAGE_CACHE_SIZE];
+    // Monotonic counter bumped whenever the executable view of guest memory
+    // changes (mappings, protections, host passthrough toggles, code patches).
+    // The instruction cache uses it to invalidate stale decoded entries.
+    uint64_t code_version;
 };
 
 struct MM_ACCESS_INFO {
@@ -141,6 +145,17 @@ inline bool mm_range_overflows(uint64_t address, uint64_t size) {
 inline void mm_init(MEMORY_MANAGER* mgr) {
     CPUEAXH_MEMSET(mgr, 0, sizeof(MEMORY_MANAGER));
     mgr->next_patch_handle = 1;
+    mgr->code_version = 1;
+}
+
+inline void mm_bump_code_version(MEMORY_MANAGER* mgr) {
+    if (!mgr) {
+        return;
+    }
+    mgr->code_version++;
+    if (mgr->code_version == 0) {
+        mgr->code_version = 1;
+    }
 }
 
 inline void mm_invalidate_cache(MEMORY_MANAGER* mgr) {
@@ -148,6 +163,7 @@ inline void mm_invalidate_cache(MEMORY_MANAGER* mgr) {
         return;
     }
     CPUEAXH_MEMSET(mgr->page_cache, 0, sizeof(mgr->page_cache));
+    mm_bump_code_version(mgr);
 }
 
 inline uint32_t mm_host_passthrough_perms(const MEMORY_MANAGER* mgr) {
@@ -331,6 +347,7 @@ inline MM_PATCH_STATUS mm_add_patch(MEMORY_MANAGER* mgr, uint64_t* out_handle, u
         mgr->patch_max_address = patch_end;
     }
     *out_handle = patch->handle;
+    mm_bump_code_version(mgr);
     return MM_PATCH_OK;
 }
 
@@ -361,6 +378,7 @@ inline MM_PATCH_STATUS mm_del_patch(MEMORY_MANAGER* mgr, uint64_t handle) {
             CPUEAXH_MEMSET(&mgr->patches[mgr->patch_count], 0, sizeof(MM_PATCH_ENTRY));
         }
         mm_rebuild_patch_bounds(mgr);
+        mm_bump_code_version(mgr);
         return MM_PATCH_OK;
     }
 

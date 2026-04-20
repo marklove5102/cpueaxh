@@ -156,8 +156,8 @@ DecodedInstruction decode_enter_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_enter(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_enter_instruction(ctx, code, code_size);
+inline void execute_enter_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint16_t alloc_size = (uint16_t)(inst.immediate & 0xFFFFULL);
     uint8_t nesting_level = (uint8_t)((inst.immediate >> 16) & 0x1FULL);
 
@@ -216,4 +216,15 @@ void execute_enter(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
 
     uint64_t stack_ptr = enter_get_stack_pointer_value(ctx, inst.address_size);
     enter_set_stack_pointer_value(ctx, inst.address_size, stack_ptr - alloc_size);
+}
+
+void execute_enter(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_enter_instruction(ctx, code, code_size);
+    execute_enter_with_decoded(ctx, &inst);
+}
+
+inline void execute_enter_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_enter_with_decoded(ctx, &dec->cached);
 }

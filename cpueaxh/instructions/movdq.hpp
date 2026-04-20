@@ -245,6 +245,89 @@ void write_movdq_xmm_low_or_mem64(CPU_CONTEXT* ctx, const DecodedInstruction* in
     write_memory_qword(ctx, inst->mem_address, value);
 }
 
+inline DecodedInstruction decode_movdq_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_movdq_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    return inst;
+}
+
+inline void execute_movdq_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    uint8_t mandatory_prefix = inst.mandatory_prefix;
+
+    if (mandatory_prefix == 0x00 && inst.opcode == 0x6E) {
+        set_mm64(ctx, decode_movdq_mm_reg_index(inst.modrm), read_movdq_gpr_or_mem(ctx, &inst, ctx->rex_w ? 64 : 32));
+        return;
+    }
+
+    if (mandatory_prefix == 0x00 && inst.opcode == 0x7E) {
+        write_movdq_gpr_or_mem(ctx, &inst, ctx->rex_w ? 64 : 32, get_mm64(ctx, decode_movdq_mm_reg_index(inst.modrm)));
+        return;
+    }
+
+    if (mandatory_prefix == 0x66 && inst.opcode == 0x6E) {
+        XMMRegister result = {};
+        result.low = read_movdq_gpr_or_mem(ctx, &inst, ctx->rex_w ? 64 : 32);
+        result.high = 0;
+        set_xmm128(ctx, decode_movdq_xmm_reg_index(ctx, inst.modrm), result);
+        return;
+    }
+
+    if (mandatory_prefix == 0x66 && inst.opcode == 0x7E) {
+        XMMRegister src = get_xmm128(ctx, decode_movdq_xmm_reg_index(ctx, inst.modrm));
+        write_movdq_gpr_or_mem(ctx, &inst, ctx->rex_w ? 64 : 32, src.low);
+        return;
+    }
+
+    if (mandatory_prefix == 0xF3 && inst.opcode == 0x7E) {
+        XMMRegister result = {};
+        result.low = read_movdq_xmm_low_or_mem64(ctx, &inst);
+        result.high = 0;
+        set_xmm128(ctx, decode_movdq_xmm_reg_index(ctx, inst.modrm), result);
+        return;
+    }
+
+    if (mandatory_prefix == 0x66 && inst.opcode == 0xD6) {
+        XMMRegister src = get_xmm128(ctx, decode_movdq_xmm_reg_index(ctx, inst.modrm));
+        write_movdq_xmm_low_or_mem64(ctx, &inst, src.low);
+        return;
+    }
+
+    if (mandatory_prefix == 0xF2 && inst.opcode == 0xD6) {
+        if (((inst.modrm >> 6) & 0x03) != 3) {
+            raise_ud_ctx(ctx);
+        }
+
+        int dest = decode_movdq_mm_reg_index(inst.modrm);
+        int source = decode_movdq_xmm_rm_index(ctx, inst.modrm);
+        set_mm64(ctx, dest, get_xmm128(ctx, source).low);
+        return;
+    }
+
+    if (mandatory_prefix == 0xF3 && inst.opcode == 0xD6) {
+        if (((inst.modrm >> 6) & 0x03) != 3) {
+            raise_ud_ctx(ctx);
+        }
+
+        int dest = decode_movdq_xmm_reg_index(ctx, inst.modrm);
+        int source = decode_movdq_mm_rm_index(inst.modrm);
+        XMMRegister result = {};
+        result.low = get_mm64(ctx, source);
+        result.high = 0;
+        set_xmm128(ctx, dest, result);
+        return;
+    }
+
+    raise_ud_ctx(ctx);
+}
+
+inline void execute_movdq_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_movdq_with_decoded(ctx, &dec->cached);
+}
+
 void execute_movdq(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     uint8_t mandatory_prefix = 0;
     DecodedInstruction inst = decode_movdq_instruction(ctx, code, code_size, &mandatory_prefix);

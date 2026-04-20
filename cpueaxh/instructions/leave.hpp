@@ -148,8 +148,8 @@ DecodedInstruction decode_leave_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_leave(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_leave_instruction(ctx, code, code_size);
+inline void execute_leave_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     leave_set_stack_pointer(ctx, inst.address_size);
 
@@ -162,4 +162,15 @@ void execute_leave(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     else {
         set_reg64(ctx, REG_RBP, leave_pop64(ctx, inst.address_size));
     }
+}
+
+void execute_leave(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_leave_instruction(ctx, code, code_size);
+    execute_leave_with_decoded(ctx, &inst);
+}
+
+inline void execute_leave_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_leave_with_decoded(ctx, &dec->cached);
 }

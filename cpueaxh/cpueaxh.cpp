@@ -43,6 +43,7 @@ struct CPUEAXH_ESCAPE_ENTRY {
 struct cpueaxh_engine {
     MEMORY_MANAGER memory_manager;
     CPU_CONTEXT context;
+    InstCache inst_cache;
     CPUEAXH_HOOK_ENTRY hooks[CPUEAXH_MAX_HOOKS];
     uint16_t hook_type_counts[CPUEAXH_HOOK_MEM_FETCH_PROT + 1];
     uint8_t escape_index_by_id[CPUEAXH_ESCAPE_INSN_MAX + 1];
@@ -309,6 +310,10 @@ static void cpueaxh_context_in(CPU_CONTEXT* out_context, const cpueaxh_x86_conte
     cpueaxh_copy_segment_in(&out_context->fs, &in_context->fs);
     cpueaxh_copy_segment_in(&out_context->gs, &in_context->gs);
     out_context->long_mode_active = true;
+    // We just rewrote both long_mode_active and cs.descriptor (via
+    // cpueaxh_copy_segment_in above); invalidate the mode-key cache so the
+    // next cpu_step recomputes from the new public-API context.
+    out_context->cached_mode_key_valid = 0;
     out_context->gdtr_base = in_context->gdtr_base;
     out_context->gdtr_limit = in_context->gdtr_limit;
     out_context->ldtr_base = in_context->ldtr_base;
@@ -494,7 +499,12 @@ bool cpu_notify_invalid_memory_hook(CPU_CONTEXT* ctx, uint32_t type, uint64_t ad
     return handled;
 }
 
-static cpueaxh_escape_insn_id cpueaxh_classify_escape_instruction(const uint8_t* bytes, int fetched, uint32_t* instruction_size) {
+// `ctx` is required so that 64-bit guests have REX (0x40..0x4F) treated as a
+// prefix here. Passing NULL would silently misclassify any REX-encoded escape
+// instruction (e.g. `rdrand r8` = 49 0F C7 F0): without REX-skipping, 0x49
+// gets eaten as the opcode, no escape entry matches, and the decoder later
+// raises a spurious UD via is_rdrand_instruction() / is_rdssp_instruction().
+static cpueaxh_escape_insn_id cpueaxh_classify_escape_instruction(const CPU_CONTEXT* ctx, const uint8_t* bytes, int fetched, uint32_t* instruction_size) {
     if (!bytes || !instruction_size || fetched <= 0) {
         return CPUEAXH_ESCAPE_INSN_NONE;
     }
@@ -502,7 +512,7 @@ static cpueaxh_escape_insn_id cpueaxh_classify_escape_instruction(const uint8_t*
     *instruction_size = 0;
 
     int prefix_len = 0;
-    uint16_t opc = peek_opcode(NULL, bytes, fetched, &prefix_len);
+    uint16_t opc = peek_opcode(ctx, bytes, fetched, &prefix_len);
     if (opc == 0xFFFF) {
         return CPUEAXH_ESCAPE_INSN_NONE;
     }
@@ -943,9 +953,25 @@ static void cpueaxh_dispatch_code_hooks(cpueaxh_engine* engine, uint32_t type, u
         return;
     }
 
-    for (int index = 0; index < CPUEAXH_MAX_HOOKS; index++) {
+    // Early-out the moment we've visited every entry of this type. The legacy
+    // loop walked all CPUEAXH_MAX_HOOKS slots even when only one hook of the
+    // requested type was registered, which dominated the per-instruction cost
+    // for hosts that wire up exactly one CODE_PRE / CODE_POST hook (the
+    // common "trace every instruction" pattern). hook_type_counts[type] is
+    // already maintained on add/remove, so we can stop iterating once we've
+    // dispatched that many entries.
+    uint16_t remaining = engine->hook_type_counts[type];
+    for (int index = 0; index < CPUEAXH_MAX_HOOKS && remaining != 0; index++) {
         CPUEAXH_HOOK_ENTRY* hook = &engine->hooks[index];
-        if (!hook->used || hook->type != type || !hook->code_callback) {
+        if (!hook->used || hook->type != type) {
+            continue;
+        }
+
+        // Found one matching this type. Decrement now (regardless of range
+        // match) so the loop can terminate as soon as we've seen them all.
+        remaining--;
+
+        if (!hook->code_callback) {
             continue;
         }
 
@@ -963,7 +989,7 @@ static bool cpueaxh_try_dispatch_escape(cpueaxh_engine* engine, uint64_t address
     }
 
     uint32_t instruction_size = 0;
-    cpueaxh_escape_insn_id instruction_id = cpueaxh_classify_escape_instruction(bytes, fetched, &instruction_size);
+    cpueaxh_escape_insn_id instruction_id = cpueaxh_classify_escape_instruction(&engine->context, bytes, fetched, &instruction_size);
     if (instruction_id == CPUEAXH_ESCAPE_INSN_NONE || instruction_size == 0) {
         return false;
     }
@@ -1060,8 +1086,15 @@ extern "C" cpueaxh_err cpueaxh_open(uint32_t arch, uint32_t mode, cpueaxh_engine
     }
 
     mm_init(&engine->memory_manager);
+    if (!cpu_inst_cache_init(&engine->inst_cache)) {
+        // Failure to allocate the cache is non-fatal: the executor falls back
+        // to per-step decoding when ctx->inst_cache is NULL. Keep going so
+        // memory-constrained kernel callers are not denied the engine.
+        engine->inst_cache.slots = NULL;
+    }
     init_cpu_context(&engine->context, &engine->memory_manager, mode == CPUEAXH_MODE_COMPAT32);
     engine->context.owner_engine = engine;
+    engine->context.inst_cache = engine->inst_cache.slots ? &engine->inst_cache : NULL;
     engine->next_hook = 1;
     engine->memory_mode = CPUEAXH_MEMORY_MODE_GUEST;
     cpueaxh_apply_memory_mode(engine, CPUEAXH_MEMORY_MODE_GUEST);
@@ -1074,10 +1107,48 @@ extern "C" void cpueaxh_close(cpueaxh_engine* engine) {
     if (!engine) {
         return;
     }
+    cpu_inst_cache_destroy(&engine->inst_cache);
     mm_destroy(&engine->memory_manager);
     CPUEAXH_FREE(engine->escapes);
     CPUEAXH_FREE(engine);
 }
+
+#if defined(CPUEAXH_INST_CACHE_STATS)
+// Bench-only helpers: only compiled when the host build defines
+// CPUEAXH_INST_CACHE_STATS so the production binary stays free of any extra
+// symbols. They let an external benchmark toggle the cache and read the
+// hit/miss counters without exposing the internal structures.
+extern "C" InstCache* cpueaxh_bench_get_inst_cache(cpueaxh_engine* engine) {
+    if (!engine) return NULL;
+    return engine->context.inst_cache;
+}
+
+extern "C" void cpueaxh_bench_set_inst_cache(cpueaxh_engine* engine, InstCache* cache) {
+    if (!engine) return;
+    engine->context.inst_cache = cache;
+}
+
+extern "C" void cpueaxh_bench_get_cache_stats(cpueaxh_engine* engine, uint64_t* hits, uint64_t* misses) {
+    if (!engine || !engine->inst_cache.slots) {
+        if (hits)   *hits = 0;
+        if (misses) *misses = 0;
+        return;
+    }
+    if (hits)   *hits   = engine->inst_cache.hits;
+    if (misses) *misses = engine->inst_cache.misses;
+}
+
+extern "C" void cpueaxh_bench_reset_cache_stats(cpueaxh_engine* engine) {
+    if (!engine) return;
+    engine->inst_cache.hits = 0;
+    engine->inst_cache.misses = 0;
+}
+
+extern "C" void cpueaxh_bench_flush_cache(cpueaxh_engine* engine) {
+    if (!engine) return;
+    cpu_inst_cache_flush(&engine->inst_cache);
+}
+#endif
 
 extern "C" cpueaxh_err cpueaxh_set_memory_mode(cpueaxh_engine* engine, uint32_t memory_mode) {
     cpueaxh_err error = cpueaxh_validate_engine(engine);
@@ -1226,7 +1297,14 @@ extern "C" cpueaxh_err cpueaxh_mem_write(cpueaxh_engine* engine, uint64_t addres
     if (error != CPUEAXH_ERR_OK || (!bytes && size != 0)) {
         return error != CPUEAXH_ERR_OK ? error : CPUEAXH_ERR_ARG;
     }
-    return cpueaxh_mem_write_raw(engine, address, bytes, size);
+    cpueaxh_err result = cpueaxh_mem_write_raw(engine, address, bytes, size);
+    // Externally-driven writes can target executable regions (e.g. loading a
+    // code section). Bump the code version so any cached decoded entries that
+    // covered the rewritten bytes are dropped on the next lookup.
+    if (size != 0) {
+        mm_bump_code_version(&engine->memory_manager);
+    }
+    return result;
 }
 
 extern "C" cpueaxh_err cpueaxh_mem_read(cpueaxh_engine* engine, uint64_t address, void* bytes, size_t size) {
@@ -1332,6 +1410,11 @@ extern "C" cpueaxh_err cpueaxh_emu_start(cpueaxh_engine* engine, uint64_t begin,
             break;
         }
     }
+    // Pre-compute whether code-hooks need to be checked at all on the step
+    // path. Hoisted above the no-hook fast path so subsequent `goto
+    // cpueaxh_emu_start_finish` jumps don't skip initialisation.
+    const bool need_pre_hook  = engine->hook_type_counts[CPUEAXH_HOOK_CODE_PRE] != 0;
+    const bool need_post_hook = engine->hook_type_counts[CPUEAXH_HOOK_CODE_POST] != 0;
 
     size_t executed = 0;
     if (!has_any_hook && !has_registered_escapes) {
@@ -1378,11 +1461,61 @@ extern "C" cpueaxh_err cpueaxh_emu_start(cpueaxh_engine* engine, uint64_t begin,
         }
 
         uint64_t address = engine->context.rip;
-        if (engine->hook_type_counts[CPUEAXH_HOOK_CODE_PRE] != 0) {
+        if (need_pre_hook) {
             cpueaxh_dispatch_code_hooks(engine, CPUEAXH_HOOK_CODE_PRE, address);
         }
         if (engine->stop_requested) {
             break;
+        }
+
+        // Fast path for the dominant case: the current PC has been seen
+        // before and was decoded as a definitely-not-escape instruction. We
+        // skip both fetch_instruction_bytes and cpueaxh_try_dispatch_escape
+        // entirely and let cpu_step (which itself re-uses the cache) execute
+        // via the fast handler. This is what turned "escapes registered but
+        // ~never fire" and "code-hook installed" workloads from dispatch-
+        // bound back into pure-execute throughput.
+        //
+        // The escape side of the short-circuit is unconditional: if no
+        // escapes are registered then cpueaxh_try_dispatch_escape would be a
+        // no-op anyway, so we never need to walk the slow path on that
+        // account; the KNOWN_NOT_ESCAPE flag is set on the cache entry by
+        // the decoder for the same set of opcodes, so a cache hit with that
+        // flag set is guaranteed-safe to bypass even when the engine has
+        // both hooks AND escapes wired up.
+        InstCache* const fast_cache = engine->context.inst_cache;
+        if (fast_cache && fast_cache->slots) {
+            const InstCacheModeKey fast_mode = cpu_inst_cache_mode_key(&engine->context);
+            InstCacheEntry* const fast_slot =
+                &fast_cache->slots[cpu_inst_cache_index(address)];
+            if (fast_slot->tag == address &&
+                fast_slot->version == engine->context.mem_mgr->code_version &&
+                fast_slot->mode.bits == fast_mode.bits &&
+                (fast_slot->decoded.flags & DECODED_FLAG_KNOWN_NOT_ESCAPE)) {
+                // We just did the (rip, version, mode) tag compare; hand the
+                // resolved slot straight to cpu_step_decoded so it skips the
+                // duplicate lookup that cpu_step would otherwise perform.
+                int status = cpu_step_decoded(&engine->context, fast_slot);
+                if (status == CPU_STEP_OK) {
+                    executed++;
+                    if (need_post_hook) {
+                        cpueaxh_dispatch_code_hooks(engine, CPUEAXH_HOOK_CODE_POST, address);
+                    }
+                    continue;
+                }
+                if (status == CPU_STEP_HALT) {
+                    if (need_post_hook) {
+                        cpueaxh_dispatch_code_hooks(engine, CPUEAXH_HOOK_CODE_POST, address);
+                    }
+                    engine->last_error = CPUEAXH_ERR_OK;
+                    goto cpueaxh_emu_start_finish;
+                }
+
+                error = cpueaxh_translate_step_error(engine, status);
+                engine->last_error = error;
+                result = error;
+                goto cpueaxh_emu_start_finish;
+            }
         }
 
         uint8_t bytes[MAX_INST_FETCH];
@@ -1397,7 +1530,7 @@ extern "C" cpueaxh_err cpueaxh_emu_start(cpueaxh_engine* engine, uint64_t begin,
             }
 
             executed++;
-            if (engine->hook_type_counts[CPUEAXH_HOOK_CODE_POST] != 0) {
+            if (need_post_hook) {
                 cpueaxh_dispatch_code_hooks(engine, CPUEAXH_HOOK_CODE_POST, address);
             }
             continue;
@@ -1406,13 +1539,13 @@ extern "C" cpueaxh_err cpueaxh_emu_start(cpueaxh_engine* engine, uint64_t begin,
         int status = cpu_step_with_prefetch(&engine->context, bytes, fetched);
         if (status == CPU_STEP_OK) {
             executed++;
-            if (engine->hook_type_counts[CPUEAXH_HOOK_CODE_POST] != 0) {
+            if (need_post_hook) {
                 cpueaxh_dispatch_code_hooks(engine, CPUEAXH_HOOK_CODE_POST, address);
             }
             continue;
         }
         if (status == CPU_STEP_HALT) {
-            if (engine->hook_type_counts[CPUEAXH_HOOK_CODE_POST] != 0) {
+            if (need_post_hook) {
                 cpueaxh_dispatch_code_hooks(engine, CPUEAXH_HOOK_CODE_POST, address);
             }
             engine->last_error = CPUEAXH_ERR_OK;

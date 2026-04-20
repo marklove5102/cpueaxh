@@ -216,9 +216,9 @@ uint64_t read_sse2_arith_pd_scalar_source_bits(CPU_CONTEXT* ctx, const DecodedIn
     return read_memory_qword(ctx, inst->mem_address);
 }
 
-void execute_sse2_arith_pd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    uint8_t mandatory_prefix = 0;
-    DecodedInstruction inst = decode_sse2_arith_pd_instruction(ctx, code, code_size, &mandatory_prefix);
+inline void execute_sse2_arith_pd_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    const uint8_t mandatory_prefix = inst.mandatory_prefix;
     int dest = decode_sse2_arith_pd_xmm_reg_index(ctx, inst.modrm);
     XMMRegister lhs = get_xmm128(ctx, dest);
 
@@ -240,4 +240,24 @@ void execute_sse2_arith_pd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     set_xmm128(ctx, dest, result);
+}
+
+inline DecodedInstruction decode_sse2_arith_pd_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_arith_pd_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    return inst;
+}
+
+void execute_sse2_arith_pd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_arith_pd_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    execute_sse2_arith_pd_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse2_arith_pd_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse2_arith_pd_with_decoded(ctx, &dec->cached);
 }

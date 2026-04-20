@@ -227,8 +227,8 @@ void execute_movmskps_misc(CPU_CONTEXT* ctx, const DecodedInstruction* inst) {
     set_reg32(ctx, dest, mask);
 }
 
-void execute_sse_mov_misc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_sse_mov_misc_instruction(ctx, code, code_size);
+inline void execute_sse_mov_misc_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint8_t mod = (inst.modrm >> 6) & 0x03;
 
     switch (inst.opcode) {
@@ -261,4 +261,15 @@ void execute_sse_mov_misc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         raise_ud_ctx(ctx);
         break;
     }
+}
+
+void execute_sse_mov_misc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_sse_mov_misc_instruction(ctx, code, code_size);
+    execute_sse_mov_misc_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse_mov_misc_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse_mov_misc_with_decoded(ctx, &dec->cached);
 }

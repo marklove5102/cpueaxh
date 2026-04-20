@@ -149,6 +149,9 @@ void execute_ret(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
 
     ctx->cs.selector = (new_selector & 0xFFFC) | ctx->cpl;
     ctx->cs.descriptor = new_desc;
+    // Far-ret can switch back to a different code-segment width; mode-key
+    // cache must be recomputed before the next instruction executes.
+    ctx->cached_mode_key_valid = 0;
 
     if (inst.operand_size == 16) {
         ctx->rip = cpu_mask_code_offset(new_rip, 16);

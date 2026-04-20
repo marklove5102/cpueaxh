@@ -114,11 +114,22 @@ DecodedInstruction decode_xlat_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     return inst;
 }
 
-void execute_xlat(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_xlat_instruction(ctx, code, code_size);
+inline void execute_xlat_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint64_t address = get_xlat_linear_address(ctx, inst.address_size, (int)inst.immediate);
     if (!cpu_validate_linear_address(ctx, address, (int)inst.immediate)) {
         return;
     }
     set_reg8(ctx, REG_RAX, read_memory_byte(ctx, address));
+}
+
+void execute_xlat(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_xlat_instruction(ctx, code, code_size);
+    execute_xlat_with_decoded(ctx, &inst);
+}
+
+inline void execute_xlat_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_xlat_with_decoded(ctx, &dec->cached);
 }

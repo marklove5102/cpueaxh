@@ -172,9 +172,8 @@ void write_movups_rm128(CPU_CONTEXT* ctx, const DecodedInstruction* inst, XMMReg
     write_xmm_memory(ctx, inst->mem_address, value);
 }
 
-void execute_movups(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_movups_instruction(ctx, code, code_size);
-
+inline void execute_movups_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     if (inst.opcode == 0x10) {
         int dest = decode_movups_xmm_reg_index(ctx, inst.modrm);
         set_xmm128(ctx, dest, read_movups_rm128(ctx, &inst));
@@ -188,4 +187,15 @@ void execute_movups(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     raise_ud_ctx(ctx);
+}
+
+void execute_movups(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_movups_instruction(ctx, code, code_size);
+    execute_movups_with_decoded(ctx, &inst);
+}
+
+inline void execute_movups_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_movups_with_decoded(ctx, &dec->cached);
 }

@@ -67,9 +67,7 @@ DecodedInstruction decode_xgetbv_instruction(CPU_CONTEXT* ctx, uint8_t* code, si
     return inst;
 }
 
-void execute_xgetbv(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    decode_xgetbv_instruction(ctx, code, code_size);
-
+inline void execute_xgetbv_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* /*inst_ptr*/) {
     int cpuid_leaf1[4] = {};
     cpu_query_cpuid(cpuid_leaf1, 1, 0);
     if ((cpuid_leaf1[2] & (1 << 26)) == 0) {
@@ -95,4 +93,15 @@ void execute_xgetbv(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     unsigned __int64 value = _xgetbv(xcr_index);
     set_reg32(ctx, REG_RAX, (uint32_t)value);
     set_reg32(ctx, REG_RDX, (uint32_t)(value >> 32));
+}
+
+void execute_xgetbv(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_xgetbv_instruction(ctx, code, code_size);
+    execute_xgetbv_with_decoded(ctx, &inst);
+}
+
+inline void execute_xgetbv_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_xgetbv_with_decoded(ctx, &dec->cached);
 }

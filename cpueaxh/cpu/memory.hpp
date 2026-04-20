@@ -164,18 +164,6 @@ inline uint8_t read_memory_byte(CPU_CONTEXT* ctx, uint64_t address) {
     return value;
 }
 
-inline uint8_t read_memory_exec_byte(CPU_CONTEXT* ctx, uint64_t address) {
-    uint8_t* ptr = NULL;
-    if (cpu_resolve_memory_access(ctx, address, MM_PROT_EXEC, &ptr, address, 1, 0) != MM_ACCESS_OK) {
-        return 0;
-    }
-    uint8_t value = *ptr;
-    if (cpu_has_hook_type(ctx, CPUEAXH_HOOK_MEM_FETCH)) {
-        cpu_notify_memory_hook(ctx, CPUEAXH_HOOK_MEM_FETCH, address, 1, value);
-    }
-    return value;
-}
-
 inline void write_memory_byte(CPU_CONTEXT* ctx, uint64_t address, uint8_t value) {
     uint8_t* ptr = NULL;
     if (cpu_resolve_memory_access(ctx, address, MM_PROT_WRITE, &ptr, address, 1, value) != MM_ACCESS_OK) {
@@ -193,6 +181,22 @@ inline uint8_t* cpu_get_contiguous_ptr_impl(CPU_CONTEXT* ctx, uint64_t address, 
     }
 
     if (cpu_can_use_page_fast_path(ctx)) {
+        // Single-page short-circuit: when the entire access lies inside one
+        // 4K page (the dominant case for naturally aligned scalar/SIMD
+        // memory accesses), one cpu_resolve_memory_access call hands back
+        // the contiguous host pointer and the rest of the bytes are
+        // guaranteed to be the contiguous host memory of the same
+        // MEMORY_REGION. Saves the per-byte verify loop, which - while
+        // largely page_cache hits - still pays one function-call frame +
+        // page-cache lookup per byte.
+        if (cpu_page_bytes_remaining(address) >= size) {
+            uint8_t* base_ptr = NULL;
+            if (cpu_resolve_memory_access(ctx, address, access, &base_ptr, address, size, value) != MM_ACCESS_OK) {
+                return NULL;
+            }
+            return base_ptr;
+        }
+
         uint8_t* base_ptr = NULL;
         size_t offset = 0;
 
@@ -228,6 +232,11 @@ inline uint8_t* cpu_get_contiguous_ptr_impl(CPU_CONTEXT* ctx, uint64_t address, 
         return NULL;
     }
 
+    // NOTE: cannot short-circuit the slow path on "same-page" because mm
+    // patches operate at byte granularity and any sub-range of [address,
+    // address+size) might be redirected to a different patch buffer. The
+    // per-byte resolve loop is what catches the discontinuity and either
+    // raises #PF or refuses the contiguous request.
     for (size_t offset = 1; offset < size; offset++) {
         uint8_t* next_ptr = NULL;
         if (cpu_resolve_memory_access(ctx, address + offset, access, &next_ptr, address, size, value) != MM_ACCESS_OK) {

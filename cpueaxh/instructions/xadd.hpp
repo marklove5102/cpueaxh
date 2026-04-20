@@ -268,7 +268,18 @@ DecodedInstruction decode_xadd_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     return inst;
 }
 
+inline void execute_xadd_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    xadd_rm_reg(ctx, inst.modrm, inst.mem_address, inst.operand_size, inst.has_lock_prefix);
+}
+
 void execute_xadd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     DecodedInstruction inst = decode_xadd_instruction(ctx, code, code_size);
-    xadd_rm_reg(ctx, inst.modrm, inst.mem_address, inst.operand_size, inst.has_lock_prefix);
+    execute_xadd_with_decoded(ctx, &inst);
+}
+
+inline void execute_xadd_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_xadd_with_decoded(ctx, &dec->cached);
 }

@@ -167,8 +167,8 @@ static XMMRegister movss_insert_low_dword(XMMRegister value, uint32_t low_dword)
     return value;
 }
 
-void execute_movss(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_movss_instruction(ctx, code, code_size);
+inline void execute_movss_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint8_t mod = (inst.modrm >> 6) & 0x03;
 
     if (inst.opcode == 0x10) {
@@ -203,4 +203,15 @@ void execute_movss(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     raise_ud_ctx(ctx);
+}
+
+void execute_movss(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_movss_instruction(ctx, code, code_size);
+    execute_movss_with_decoded(ctx, &inst);
+}
+
+inline void execute_movss_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_movss_with_decoded(ctx, &dec->cached);
 }

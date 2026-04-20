@@ -3248,7 +3248,10 @@ inline bool run_compat32_near_ret_case(const std::string& name, std::uint64_t se
             break;
         }
 
-        const cpueaxh_err err = cpueaxh_emu_start_function(engine, kGuestCodeBase, 0, 1);
+        // NOTE: cannot use cpueaxh_emu_start_function here because it overwrites
+        // [RSP] with a magic return address, which would clobber the seeded
+        // return target this test wants RET to consume.
+        const cpueaxh_err err = cpueaxh_emu_start(engine, kGuestCodeBase, 0, 0, 1);
         if (err != CPUEAXH_ERR_OK || cpueaxh_code_exception(engine) != CPUEAXH_EXCEPTION_NONE) {
             failure.case_name = name;
             failure.detail = "near ret execution failed";
@@ -3320,7 +3323,10 @@ inline bool run_compat32_retf_to_64_case(const std::string& name, std::uint64_t 
             break;
         }
 
-        const cpueaxh_err err = cpueaxh_emu_start_function(engine, kGuestCodeBase, 0, 3);
+        // NOTE: cannot use cpueaxh_emu_start_function here because it overwrites
+        // [RSP] with a magic return address, which would clobber the seeded
+        // far-return offset/selector pair this test wants RETF to consume.
+        const cpueaxh_err err = cpueaxh_emu_start(engine, kGuestCodeBase, 0, 0, 3);
         if (err != CPUEAXH_ERR_OK || cpueaxh_code_exception(engine) != CPUEAXH_EXCEPTION_NONE) {
             failure.case_name = name;
             failure.detail = "retf execution failed";
@@ -5447,6 +5453,21 @@ inline bool run_manual_special_tests(const HostFeatures& features, std::uint64_t
         if (!result) {
             std::cerr << "FAIL " << failure.case_name << std::endl;
             std::cerr << failure.detail << std::endl;
+            // Allow CPUEAXH_TEST_CONTINUE=1 to surface every regression rather
+            // than stopping at the first one. The suite still returns success
+            // only when no failure was recorded (handled by run_all_tests).
+            char* env_continue = nullptr;
+            size_t env_continue_size = 0;
+            const bool keep_going =
+                _dupenv_s(&env_continue, &env_continue_size, "CPUEAXH_TEST_CONTINUE") == 0
+                && env_continue != nullptr;
+            if (env_continue) {
+                free(env_continue);
+            }
+            if (keep_going) {
+                ++executed;
+                return true;
+            }
             return false;
         }
         ++executed;

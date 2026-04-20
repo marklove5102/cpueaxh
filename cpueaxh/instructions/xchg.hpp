@@ -230,8 +230,8 @@ DecodedInstruction decode_xchg_instruction(CPU_CONTEXT* ctx, uint8_t* code, size
     ctx->last_inst_size = (int)offset;
     return inst;
 }
-void execute_xchg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_xchg_instruction(ctx, code, code_size);
+inline void execute_xchg_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     switch (inst.opcode) {
     case 0x86:
     case 0x87:
@@ -250,4 +250,15 @@ void execute_xchg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     default:
         raise_ud_ctx(ctx);
     }
+}
+
+void execute_xchg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_xchg_instruction(ctx, code, code_size);
+    execute_xchg_with_decoded(ctx, &inst);
+}
+
+inline void execute_xchg_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_xchg_with_decoded(ctx, &dec->cached);
 }

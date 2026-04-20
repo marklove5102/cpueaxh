@@ -283,8 +283,8 @@ DecodedInstruction decode_inc_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
 
 // --- INC instruction executor ---
 
-void execute_inc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_inc_instruction(ctx, code, code_size);
+inline void execute_inc_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     switch (inst.opcode) {
     case 0x40: case 0x41: case 0x42: case 0x43:
@@ -317,4 +317,15 @@ void execute_inc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         }
         break;
     }
+}
+
+void execute_inc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_inc_instruction(ctx, code, code_size);
+    execute_inc_with_decoded(ctx, &inst);
+}
+
+inline void execute_inc_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_inc_with_decoded(ctx, &dec->cached);
 }

@@ -69,10 +69,19 @@ DecodedInstruction decode_rdtsc_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_rdtsc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    decode_rdtsc_instruction(ctx, code, code_size);
-
+inline void execute_rdtsc_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* /*inst_ptr*/) {
     unsigned __int64 tsc = __rdtsc();
     set_reg32(ctx, REG_RAX, (uint32_t)(tsc & 0xFFFFFFFFULL));
     set_reg32(ctx, REG_RDX, (uint32_t)(tsc >> 32));
+}
+
+void execute_rdtsc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_rdtsc_instruction(ctx, code, code_size);
+    execute_rdtsc_with_decoded(ctx, &inst);
+}
+
+inline void execute_rdtsc_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_rdtsc_with_decoded(ctx, &dec->cached);
 }

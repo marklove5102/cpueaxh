@@ -234,12 +234,9 @@ inline DecodedInstruction decode_pshufb_instruction(CPU_CONTEXT* ctx, uint8_t* c
     return inst;
 }
 
-inline void execute_pshufb(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    bool xmm_form = false;
-    DecodedInstruction inst = decode_pshufb_instruction(ctx, code, code_size, &xmm_form);
-    if (cpu_has_exception(ctx)) {
-        return;
-    }
+inline void execute_pshufb_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    const bool xmm_form = inst.mandatory_prefix == 0x66;
 
     if (xmm_form) {
         validate_pshufb_xmm_alignment(ctx, &inst);
@@ -262,4 +259,30 @@ inline void execute_pshufb(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         ? get_mm64(ctx, inst.modrm & 0x07)
         : read_memory_qword(ctx, inst.mem_address);
     set_mm64(ctx, dest, apply_pshufb64(source, control));
+}
+
+inline DecodedInstruction decode_pshufb_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    bool xmm_form = false;
+    DecodedInstruction inst = decode_pshufb_instruction(ctx, code, code_size, &xmm_form);
+    if (cpu_has_exception(ctx)) {
+        return inst;
+    }
+    inst.mandatory_prefix = xmm_form ? 0x66 : 0;
+    return inst;
+}
+
+inline void execute_pshufb(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    bool xmm_form = false;
+    DecodedInstruction inst = decode_pshufb_instruction(ctx, code, code_size, &xmm_form);
+    if (cpu_has_exception(ctx)) {
+        return;
+    }
+    inst.mandatory_prefix = xmm_form ? 0x66 : 0;
+    execute_pshufb_with_decoded(ctx, &inst);
+}
+
+inline void execute_pshufb_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_pshufb_with_decoded(ctx, &dec->cached);
 }

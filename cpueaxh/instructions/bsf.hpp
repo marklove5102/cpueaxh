@@ -253,8 +253,8 @@ DecodedInstruction decode_bsf_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     return inst;
 }
 
-void execute_bsf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_bsf_instruction(ctx, code, code_size);
+inline void execute_bsf_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint64_t source = read_bsf_rm_operand(ctx, inst.modrm, inst.mem_address, inst.operand_size) & get_bsf_operand_mask(ctx, inst.operand_size);
 
     if (inst.mandatory_prefix == 0xF3) {
@@ -279,4 +279,15 @@ void execute_bsf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
 
     write_bsf_reg_operand(ctx, inst.modrm, inst.operand_size, result);
     set_flag(ctx, RFLAGS_ZF, false);
+}
+
+void execute_bsf(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_bsf_instruction(ctx, code, code_size);
+    execute_bsf_with_decoded(ctx, &inst);
+}
+
+inline void execute_bsf_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_bsf_with_decoded(ctx, &dec->cached);
 }

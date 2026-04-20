@@ -296,7 +296,18 @@ DecodedInstruction decode_cmpxchg_instruction(CPU_CONTEXT* ctx, uint8_t* code, s
     return inst;
 }
 
+inline void execute_cmpxchg_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    cmpxchg_rm_reg(ctx, inst.modrm, inst.mem_address, inst.operand_size, inst.has_lock_prefix);
+}
+
 void execute_cmpxchg(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     DecodedInstruction inst = decode_cmpxchg_instruction(ctx, code, code_size);
-    cmpxchg_rm_reg(ctx, inst.modrm, inst.mem_address, inst.operand_size, inst.has_lock_prefix);
+    execute_cmpxchg_with_decoded(ctx, &inst);
+}
+
+inline void execute_cmpxchg_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_cmpxchg_with_decoded(ctx, &dec->cached);
 }

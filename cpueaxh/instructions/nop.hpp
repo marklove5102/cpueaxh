@@ -150,6 +150,16 @@ DecodedInstruction decode_nop_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     return inst;
 }
 
+inline void execute_nop_with_decoded(CPU_CONTEXT* /*ctx*/, const DecodedInstruction* /*inst_ptr*/) {
+    // NOP has no architectural effect beyond advancing RIP.
+}
+
 void execute_nop(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     decode_nop_instruction(ctx, code, code_size);
+}
+
+inline void execute_nop_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_nop_with_decoded(ctx, &dec->cached);
 }

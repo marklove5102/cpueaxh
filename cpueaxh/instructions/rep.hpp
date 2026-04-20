@@ -111,6 +111,56 @@ void execute_rep_iteration(CPU_CONTEXT* ctx, uint8_t opcode, uint8_t* code, size
     }
 }
 
+inline DecodedInstruction decode_rep_for_fast(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    size_t prefix_len = 0;
+    cpu_reset_prefix_state(ctx);
+    uint8_t rep_prefix = decode_rep_prefix(ctx, code, code_size, &prefix_len);
+    if (rep_prefix != 0xF2 && rep_prefix != 0xF3) {
+        raise_ud_ctx(ctx);
+        return DecodedInstruction{};
+    }
+    if (prefix_len >= code_size) {
+        raise_gp_ctx(ctx, 0);
+        return DecodedInstruction{};
+    }
+    uint8_t opcode = code[prefix_len];
+    if (!is_rep_string_opcode(opcode)) {
+        raise_ud_ctx(ctx);
+        return DecodedInstruction{};
+    }
+    DecodedInstruction inst = decode_rep_target(ctx, opcode, code, code_size);
+    inst.opcode = opcode;
+    inst.mandatory_prefix = rep_prefix;
+    return inst;
+}
+
+inline void execute_rep_iteration_with_decoded(CPU_CONTEXT* ctx, uint8_t opcode, const DecodedInstruction* inst_ptr) {
+    switch (opcode) {
+    case 0xA4:
+    case 0xA5:
+        execute_movs_with_decoded(ctx, inst_ptr);
+        break;
+    case 0xA6:
+    case 0xA7:
+        execute_cmps_with_decoded(ctx, inst_ptr);
+        break;
+    case 0xAA:
+    case 0xAB:
+        execute_stos_with_decoded(ctx, inst_ptr);
+        break;
+    case 0xAC:
+    case 0xAD:
+        execute_lods_with_decoded(ctx, inst_ptr);
+        break;
+    case 0xAE:
+    case 0xAF:
+        execute_scas_with_decoded(ctx, inst_ptr);
+        break;
+    default:
+        raise_ud_ctx(ctx);
+    }
+}
+
 void execute_rep(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     size_t prefix_len = 0;
     cpu_reset_prefix_state(ctx);
@@ -137,7 +187,7 @@ void execute_rep(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     bool conditional_scan = (opcode == 0xA6 || opcode == 0xA7 || opcode == 0xAE || opcode == 0xAF);
 
     while (count != 0) {
-        execute_rep_iteration(ctx, opcode, code, code_size);
+        execute_rep_iteration_with_decoded(ctx, opcode, &inst);
 
         count--;
         set_rep_count(ctx, inst.address_size, count);
@@ -147,6 +197,50 @@ void execute_rep(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
 
         if (conditional_scan) {
             bool zf = (ctx->rflags & RFLAGS_ZF) != 0;
+            if (rep_prefix == 0xF3) {
+                if (!zf) {
+                    break;
+                }
+            }
+            else {
+                if (zf) {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+inline void execute_rep_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+
+    const DecodedInstruction& inst = dec->cached;
+    const uint8_t opcode = (uint8_t)inst.opcode;
+    const uint8_t rep_prefix = inst.mandatory_prefix;
+    if (rep_prefix != 0xF2 && rep_prefix != 0xF3) {
+        raise_ud_ctx(ctx);
+        return;
+    }
+
+    uint64_t count = get_rep_count(ctx, inst.address_size);
+    if (count == 0) {
+        return;
+    }
+
+    const bool conditional_scan = (opcode == 0xA6 || opcode == 0xA7 || opcode == 0xAE || opcode == 0xAF);
+
+    while (count != 0) {
+        execute_rep_iteration_with_decoded(ctx, opcode, &inst);
+
+        count--;
+        set_rep_count(ctx, inst.address_size, count);
+        if (count == 0) {
+            break;
+        }
+
+        if (conditional_scan) {
+            const bool zf = (ctx->rflags & RFLAGS_ZF) != 0;
             if (rep_prefix == 0xF3) {
                 if (!zf) {
                     break;

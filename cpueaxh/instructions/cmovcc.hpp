@@ -200,12 +200,30 @@ DecodedInstruction decode_cmovcc_instruction(CPU_CONTEXT* ctx, uint8_t* code, si
     return inst;
 }
 
-void execute_cmovcc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_cmovcc_instruction(ctx, code, code_size);
+inline void execute_cmovcc_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint64_t source = read_cmovcc_rm_operand(ctx, inst.modrm, inst.mem_address, inst.operand_size);
     uint8_t cond = inst.opcode & 0x0F;
 
     if (eval_condition(ctx, cond)) {
         write_cmovcc_reg_operand(ctx, inst.modrm, inst.operand_size, source);
     }
+}
+
+void execute_cmovcc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_cmovcc_instruction(ctx, code, code_size);
+    execute_cmovcc_with_decoded(ctx, &inst);
+}
+
+inline void execute_cmovcc_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    if (!decoded_inst_needs_mem_recompute(&dec->cached)) {
+        execute_cmovcc_with_decoded(ctx, &dec->cached);
+        return;
+    }
+    DecodedInstruction live = dec->cached;
+    live.mem_address = get_effective_address(ctx, live.modrm, &live.sib, &live.displacement,
+                                             live.address_size, dec->length);
+    execute_cmovcc_with_decoded(ctx, &live);
 }

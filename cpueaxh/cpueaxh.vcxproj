@@ -124,10 +124,14 @@
     <ClInclude Include="cpueaxh_internal.hpp" />
     <ClInclude Include="cpueaxh_platform.hpp" />
     <ClInclude Include="cpu\calc.hpp" />
+    <ClInclude Include="cpu\decoded.hpp" />
+    <ClInclude Include="cpu\decoder.hpp" />
     <ClInclude Include="cpu\def.h" />
+    <ClInclude Include="cpu\dispatch_helpers.hpp" />
     <ClInclude Include="cpu\executor.hpp" />
     <ClInclude Include="cpu\helper.hpp" />
     <ClInclude Include="cpu\init.hpp" />
+    <ClInclude Include="cpu\inst_cache.hpp" />
     <ClInclude Include="cpu\memory.hpp" />
     <ClInclude Include="instructions\adc.hpp" />
     <ClInclude Include="instructions\add.hpp" />

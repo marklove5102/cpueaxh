@@ -516,8 +516,8 @@ DecodedInstruction decode_sbb_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
     return inst;
 }
 
-void execute_sbb(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_sbb_instruction(ctx, code, code_size);
+inline void execute_sbb_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     switch (inst.opcode) {
     case 0x1C:
@@ -590,4 +590,15 @@ void execute_sbb(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     default:
         raise_ud_ctx(ctx);
     }
+}
+
+void execute_sbb(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_sbb_instruction(ctx, code, code_size);
+    execute_sbb_with_decoded(ctx, &inst);
+}
+
+inline void execute_sbb_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sbb_with_decoded(ctx, &dec->cached);
 }

@@ -296,9 +296,9 @@ void execute_movmskpd_pd(CPU_CONTEXT* ctx, const DecodedInstruction* inst) {
     set_reg32(ctx, dest, mask);
 }
 
-void execute_sse2_mov_pd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    uint8_t mandatory_prefix = 0;
-    DecodedInstruction inst = decode_sse2_mov_pd_instruction(ctx, code, code_size, &mandatory_prefix);
+inline void execute_sse2_mov_pd_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
+    uint8_t mandatory_prefix = inst.mandatory_prefix;
 
     if (mandatory_prefix == 0xF2) {
         execute_movsd_pd(ctx, &inst);
@@ -332,4 +332,24 @@ void execute_sse2_mov_pd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     default:
         raise_ud_ctx(ctx);
     }
+}
+
+inline DecodedInstruction decode_sse2_mov_pd_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_mov_pd_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    return inst;
+}
+
+void execute_sse2_mov_pd(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    uint8_t mandatory_prefix = 0;
+    DecodedInstruction inst = decode_sse2_mov_pd_instruction(ctx, code, code_size, &mandatory_prefix);
+    inst.mandatory_prefix = mandatory_prefix;
+    execute_sse2_mov_pd_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse2_mov_pd_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse2_mov_pd_with_decoded(ctx, &dec->cached);
 }

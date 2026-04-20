@@ -298,8 +298,8 @@ DecodedInstruction decode_pop_instruction(CPU_CONTEXT* ctx, uint8_t* code, size_
 
 // --- POP instruction executor ---
 
-void execute_pop(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_pop_instruction(ctx, code, code_size);
+inline void execute_pop_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     // Check for two-byte opcode (0x0F prefix)
     if (inst.imm_size == 0x0F) {
@@ -394,4 +394,15 @@ void execute_pop(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
         }
         break;
     }
+}
+
+void execute_pop(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_pop_instruction(ctx, code, code_size);
+    execute_pop_with_decoded(ctx, &inst);
+}
+
+inline void execute_pop_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_pop_with_decoded(ctx, &dec->cached);
 }

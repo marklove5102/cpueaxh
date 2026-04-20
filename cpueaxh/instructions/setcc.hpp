@@ -162,9 +162,20 @@ DecodedInstruction decode_setcc_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_setcc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_setcc_instruction(ctx, code, code_size);
+inline void execute_setcc_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     uint8_t cond = inst.opcode & 0x0F;
     uint8_t value = eval_condition(ctx, cond) ? 1 : 0;
     write_setcc_rm_operand(ctx, inst.modrm, inst.mem_address, value);
+}
+
+void execute_setcc(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_setcc_instruction(ctx, code, code_size);
+    execute_setcc_with_decoded(ctx, &inst);
+}
+
+inline void execute_setcc_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_setcc_with_decoded(ctx, &dec->cached);
 }

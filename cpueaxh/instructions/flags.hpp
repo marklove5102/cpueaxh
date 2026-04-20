@@ -65,8 +65,8 @@ DecodedInstruction decode_flags_instruction(CPU_CONTEXT* ctx, uint8_t* code, siz
     return inst;
 }
 
-void execute_flags(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    DecodedInstruction inst = decode_flags_instruction(ctx, code, code_size);
+inline void execute_flags_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
 
     switch (inst.opcode) {
     case 0xF8:
@@ -84,4 +84,15 @@ void execute_flags(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     default:
         raise_ud_ctx(ctx);
     }
+}
+
+void execute_flags(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_flags_instruction(ctx, code, code_size);
+    execute_flags_with_decoded(ctx, &inst);
+}
+
+inline void execute_flags_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_flags_with_decoded(ctx, &dec->cached);
 }

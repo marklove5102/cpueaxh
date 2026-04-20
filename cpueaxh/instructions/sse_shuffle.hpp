@@ -197,9 +197,8 @@ XMMRegister read_sse_shuffle_source_operand(CPU_CONTEXT* ctx, const DecodedInstr
     return read_xmm_memory(ctx, inst->mem_address);
 }
 
-void execute_sse_shuffle(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    bool has_imm8 = false;
-    DecodedInstruction inst = decode_sse_shuffle_instruction(ctx, code, code_size, &has_imm8);
+inline void execute_sse_shuffle_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* inst_ptr) {
+    const DecodedInstruction& inst = *inst_ptr;
     int dest = decode_sse_shuffle_xmm_reg_index(ctx, inst.modrm);
     XMMRegister lhs = get_xmm128(ctx, dest);
     XMMRegister rhs = read_sse_shuffle_source_operand(ctx, &inst);
@@ -234,4 +233,22 @@ void execute_sse_shuffle(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
     }
 
     raise_ud_ctx(ctx);
+}
+
+inline DecodedInstruction decode_sse_shuffle_instruction_no_aux(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    bool has_imm8 = false;
+    DecodedInstruction inst = decode_sse_shuffle_instruction(ctx, code, code_size, &has_imm8);
+    return inst;
+}
+
+void execute_sse_shuffle(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    bool has_imm8 = false;
+    DecodedInstruction inst = decode_sse_shuffle_instruction(ctx, code, code_size, &has_imm8);
+    execute_sse_shuffle_with_decoded(ctx, &inst);
+}
+
+inline void execute_sse_shuffle_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_sse_shuffle_with_decoded(ctx, &dec->cached);
 }

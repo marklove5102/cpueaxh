@@ -69,12 +69,21 @@ DecodedInstruction decode_rdtscp_instruction(CPU_CONTEXT* ctx, uint8_t* code, si
     return inst;
 }
 
-void execute_rdtscp(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
-    decode_rdtscp_instruction(ctx, code, code_size);
-
+inline void execute_rdtscp_with_decoded(CPU_CONTEXT* ctx, const DecodedInstruction* /*inst_ptr*/) {
     unsigned int tsc_aux = 0;
     unsigned __int64 tsc = __rdtscp(&tsc_aux);
     set_reg32(ctx, REG_RAX, (uint32_t)(tsc & 0xFFFFFFFFULL));
     set_reg32(ctx, REG_RDX, (uint32_t)(tsc >> 32));
     set_reg32(ctx, REG_RCX, ctx->processor_id);
+}
+
+void execute_rdtscp(CPU_CONTEXT* ctx, uint8_t* code, size_t code_size) {
+    DecodedInstruction inst = decode_rdtscp_instruction(ctx, code, code_size);
+    execute_rdtscp_with_decoded(ctx, &inst);
+}
+
+inline void execute_rdtscp_fast(CPU_CONTEXT* ctx, const DecodedInst* dec) {
+    decoded_inst_apply_prefix(ctx, dec);
+    ctx->last_inst_size = dec->length;
+    execute_rdtscp_with_decoded(ctx, &dec->cached);
 }
