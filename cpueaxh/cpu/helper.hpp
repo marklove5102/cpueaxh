@@ -275,7 +275,7 @@ uint64_t get_effective_offset(CPU_CONTEXT* ctx, uint8_t modrm, uint8_t* sib, int
             }
 
             bool has_index = !(raw_index == 4 && !(long_mode && ctx->rex_x));
-            bool no_base = (mod == 0 && raw_base == 5 && !(long_mode && ctx->rex_b));
+            bool no_base = (mod == 0 && raw_base == 5);
 
             if (no_base) {
                 addr = (uint32_t)(*disp);

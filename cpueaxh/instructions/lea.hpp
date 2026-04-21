@@ -45,7 +45,7 @@ uint64_t calculate_lea_address(CPU_CONTEXT* ctx, uint8_t modrm, bool has_sib, ui
             }
 
             bool has_index = !(raw_index == 4 && !(long_mode_addr && ctx->rex_x));
-            bool no_base = (mod == 0 && raw_base == 5 && !(long_mode_addr && ctx->rex_b));
+            bool no_base = (mod == 0 && raw_base == 5);
 
             if (no_base) {
                 if (address_size == 64) {
